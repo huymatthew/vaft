@@ -23,17 +23,12 @@ FROM eclipse-temurin:21-jre-jammy
 
 WORKDIR /app
 
-# Copy jar đã build từ stage 1
-# Tên jar khớp với groupId/artifactId/version trong pom.xml (vaft-1.0-jar-with-dependencies.jar)
 COPY --from=build /app/target/vaft-1.0-jar-with-dependencies.jar app.jar
 
-# Copy config mặc định (có thể override khi chạy container bằng volume mount)
-# LƯU Ý: bỏ comment dòng dưới sau khi đã tạo file src/main/resources/cluster.yaml
-# COPY src/main/resources/cluster.yaml /app/cluster.yaml
+COPY src/main/resources/cluster.yaml /app/cluster.yaml
 
-# Port gRPC lắng nghe (khớp với config port của node)
 EXPOSE 9001
 
-# nodeId truyền vào lúc chạy container qua biến môi trường hoặc argument
+
 ENTRYPOINT ["java", "-jar", "app.jar"]
 CMD ["--nodeId=1", "--config=/app/cluster.yaml"]

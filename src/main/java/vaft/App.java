@@ -1,7 +1,55 @@
 package vaft;
 
-class App {
+import vaft.network.*;
+import vaft.utils.UltiMethod;
+
+import java.net.Socket;
+import java.net.ServerSocket;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+
+
+public class App {
+    public static ClusterConfig config;
+    public static NodeInfo selfNode;
     public static void main(String[] args) {
-        System.out.println("Hello World!");
+        ClusterConfig config = ClusterConfig.loadFromFile(UltiMethod.getConfigPathFromArgs(args));
+        App.config = config;
+        selfNode = config.getNodeById(UltiMethod.getNodeIdFromArgs(args));
+        System.out.println("Hello, this is a Vaft node. " + "My ID is " + selfNode.getId() + " and my address is " + selfNode.getHost() + ":" + selfNode.getPort() + ".");
+        startNode();
+    }
+
+    private static void startNode() {
+        try {
+            ServerSocket sc = new ServerSocket(selfNode.getPort());
+            while (true) {
+                Socket socket = sc.accept();
+                new ServerThread(socket).start();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+}
+
+class ServerThread extends Thread {
+    private Socket socket;
+
+    public ServerThread(Socket socket) {
+        this.socket = socket;
+    }
+
+    @Override
+    public void run() {
+        try {
+            DataInputStream dis = new DataInputStream(socket.getInputStream());
+            int message;
+            while ((message = dis.read()) != -1) {
+                System.out.println("Received a message from " + socket.getInetAddress().getHostAddress() + ":" + socket.getPort());
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 }
