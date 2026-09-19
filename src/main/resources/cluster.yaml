@@ -1,0 +1,10 @@
+nodes:
+  - id: 1
+    host: node1
+    port: 9001
+  - id: 2
+    host: node2
+    port: 9002
+  - id: 3
+    host: node3
+    port: 9003

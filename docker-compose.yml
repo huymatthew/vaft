@@ -1,0 +1,34 @@
+services:
+  node1:
+    build: .
+    container_name: node1
+    hostname: node1
+    command: ["--nodeId=1", "--config=/app/cluster.yaml"]
+    ports:
+      - "9001:9001"
+    networks:
+      - raft-net
+
+  node2:
+    build: .
+    container_name: node2
+    hostname: node2
+    command: ["--nodeId=2", "--config=/app/cluster.yaml"]
+    ports:
+      - "9002:9002"
+    networks:
+      - raft-net
+
+  node3:
+    build: .
+    container_name: node3
+    hostname: node3
+    command: ["--nodeId=3", "--config=/app/cluster.yaml"]
+    ports:
+      - "9003:9003"
+    networks:
+      - raft-net
+
+networks:
+  raft-net:
+    driver: bridge
