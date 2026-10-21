@@ -1,14 +1,17 @@
-package vaft.network;
+package vaft.config;
 
 import java.io.FileInputStream;
 import java.util.List;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
-import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.LoaderOptions;
+import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.Constructor;
 
 public class ClusterConfig {
     private List<NodeInfo> nodes;
+    private NodeInfo self;
 
     // 1. Constructor rỗng cho SnakeYAML
     public ClusterConfig() {}
@@ -20,6 +23,10 @@ public class ClusterConfig {
 
     public List<NodeInfo> getNodes() {
         return nodes;
+    }
+
+    public void setSelf(NodeInfo self) {
+        this.self = self;
     }
 
     // 3. Chuyển logic đọc file thành Factory Method (hàm static)
@@ -43,5 +50,19 @@ public class ClusterConfig {
             }
         }
         return null; // Return null if node with the given ID is not found
+    }
+
+    public NodeInfo getSelf() {
+        return self;
+    }
+
+    public List<NodeInfo> getPeers(String selfNodeId) {
+        return nodes == null ? List.of() : nodes.stream()
+                .filter(node -> !Objects.equals(node.getId(), selfNodeId))
+                .collect(Collectors.toUnmodifiableList());
+    }
+
+    public int getQuorumSize() {
+        return nodes == null ? 0 : nodes.size() / 2 + 1;
     }
 }

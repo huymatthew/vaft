@@ -1,12 +1,12 @@
 package vaft;
 
-import vaft.network.*;
-import vaft.utils.UltiMethod;
-
-import java.net.Socket;
-import java.net.ServerSocket;
 import java.io.DataInputStream;
-import java.io.DataOutputStream;
+import java.net.ServerSocket;
+import java.net.Socket;
+
+import vaft.config.ClusterConfig;
+import vaft.config.NodeInfo;
+import vaft.utils.UltiMethod;
 
 
 public class App {

@@ -1,4 +1,4 @@
-package vaft.network;
+package vaft.config;
 
 public class NodeInfo {
     private String id;
@@ -23,4 +23,8 @@ public class NodeInfo {
     public String getId() { return id; }
     public String getHost() { return host; }
     public int getPort() { return port; }
+
+    public String getNodeId() { return id; }
+    public int getRaftTcpPort() { return port; }
+    public int getDashboardHttpPort() { return port; }
 }
