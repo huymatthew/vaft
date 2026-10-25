@@ -11,7 +11,7 @@ import org.yaml.snakeyaml.constructor.Constructor;
 
 public class ClusterConfig {
     private List<NodeInfo> nodes;
-    private NodeInfo self;
+    private NodeInfo self; // Thông tin ip,port về Node hiện tại (self) trong cụm.
 
     // 1. Constructor rỗng cho SnakeYAML
     public ClusterConfig() {}

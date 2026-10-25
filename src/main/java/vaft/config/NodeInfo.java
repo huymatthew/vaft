@@ -10,7 +10,7 @@ public class NodeInfo {
 
     // Bạn vẫn có thể giữ lại constructor này nếu cần dùng ở nơi khác
     public NodeInfo(String id, String host, int port) {
-        this.id = id;
+        this.id = id; 
         this.host = host;
         this.port = port;
     }
