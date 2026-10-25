@@ -1,6 +1,7 @@
 package vaft.bootstrap;
 
 import java.util.Objects;
+
 import vaft.config.ClusterConfig;
 import vaft.config.NodeInfo;
 import vaft.core.RaftState;
@@ -27,9 +28,9 @@ public class RaftNode implements AutoCloseable {
         this.self = Objects.requireNonNull(self);
         this.state = Objects.requireNonNull(state);
         this.transport = Objects.requireNonNull(transport);
-        this.electionService = Objects.requireNonNull(electionService);
-        this.replicationService = Objects.requireNonNull(replicationService);
-        this.dashboardServer = Objects.requireNonNull(dashboardServer);
+        this.electionService = electionService; // Objects.requireNonNull(electionService);
+        this.replicationService = replicationService; // Objects.requireNonNull(replicationService);
+        this.dashboardServer = dashboardServer; // Objects.requireNonNull(dashboardServer);
     }
 
     public void start() {

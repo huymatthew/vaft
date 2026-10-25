@@ -1,9 +1,16 @@
-package vaft.transport;
+package vaft.transport.impl;
 
 import java.time.Duration;
 import java.util.Map;
+
 import vaft.config.NodeInfo;
-import vaft.protocol.*;
+import vaft.protocol.AppendEntriesRequest;
+import vaft.protocol.AppendEntriesResponse;
+import vaft.protocol.RequestVoteRequest;
+import vaft.protocol.RequestVoteResponse;
+import vaft.transport.NetworkPartitionTable;
+import vaft.transport.RaftRpcHandler;
+import vaft.transport.RaftTransport;
 
 public class TcpRaftTransport implements RaftTransport, AutoCloseable {
     private final NodeInfo self;
