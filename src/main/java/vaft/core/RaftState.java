@@ -45,8 +45,8 @@ public class RaftState {
     public void setLeaderId(String leaderId) { this.leaderId = leaderId; }
     public void setCommitIndex(int commitIndex) { this.commitIndex = commitIndex; }
     public void setLastApplied(int lastApplied) { this.lastApplied = lastApplied; }
-    public int getLastLogIndex() { return log.isEmpty() ? 0 : log.get(log.size() - 1).getIndex(); }
-    public int getLastLogTerm() { return log.isEmpty() ? 0 : log.get(log.size() - 1).getTerm(); }
+    public int getLastLogIndex() { return log.isEmpty() ? 0 : log.get(log.size() - 1).index(); }
+    public int getLastLogTerm() { return log.isEmpty() ? 0 : log.get(log.size() - 1).term(); }
 
     public void becomeCandidate() { role = NodeRole.CANDIDATE; }
     public void becomeLeader() { role = NodeRole.LEADER; }

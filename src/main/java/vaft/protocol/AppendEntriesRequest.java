@@ -2,17 +2,25 @@ package vaft.protocol;
 
 public class AppendEntriesRequest {
     private int term;
-    private String leaderId;
+    private int leaderId;
     private int prevLogIndex;
     private int prevLogTerm;
     private java.util.List<LogEntry> entries = java.util.List.of();
     private int leaderCommit;
 
     public AppendEntriesRequest() {}
+    public AppendEntriesRequest(int term, int leaderId, int prevLogIndex, int prevLogTerm, java.util.List<LogEntry> entries, int leaderCommit) {
+        this.term = term;
+        this.leaderId = leaderId;
+        this.prevLogIndex = prevLogIndex;
+        this.prevLogTerm = prevLogTerm;
+        this.entries = entries;
+        this.leaderCommit = leaderCommit;
+    }
     public int getTerm() { return term; }
     public void setTerm(int term) { this.term = term; }
-    public String getLeaderId() { return leaderId; }
-    public void setLeaderId(String leaderId) { this.leaderId = leaderId; }
+    public int getLeaderId() { return leaderId; }
+    public void setLeaderId(int leaderId) { this.leaderId = leaderId; }
     public int getPrevLogIndex() { return prevLogIndex; }
     public void setPrevLogIndex(int value) { prevLogIndex = value; }
     public int getPrevLogTerm() { return prevLogTerm; }

@@ -7,6 +7,12 @@ public class AppendEntriesResponse {
     private int conflictIndex;
 
     public AppendEntriesResponse() {}
+    public AppendEntriesResponse(int term, boolean success, int matchIndex, int conflictIndex) {
+        this.term = term;
+        this.success = success;
+        this.matchIndex = matchIndex;
+        this.conflictIndex = conflictIndex;
+    }
     public int getTerm() { return term; }
     public void setTerm(int term) { this.term = term; }
     public boolean isSuccess() { return success; }

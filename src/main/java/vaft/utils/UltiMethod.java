@@ -1,13 +1,14 @@
 package vaft.utils;
 
 public class UltiMethod {
-    public static String getNodeIdFromArgs(String[] args) {
+    public static int  getNodeIdFromArgs(String[] args) {
         for (String arg : args) {
             if (arg.startsWith("--nodeId=")) {
-                return arg.substring("--nodeId=".length());
+                String nodeIdStr = arg.substring("--nodeId=".length());
+                return Integer.parseInt(nodeIdStr);
             }
         }
-        return null; // Return null if nodeId is not found
+        return -1; // Return -1 if nodeId is not found
     }
     public static String getConfigPathFromArgs(String[] args) {
         for (String arg : args) {

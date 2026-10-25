@@ -1,9 +1,7 @@
 package vaft;
 
-import java.io.DataInputStream;
-import java.net.ServerSocket;
-import java.net.Socket;
-import java.time.Duration;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ThreadLocalRandom;
 
 import vaft.bootstrap.RaftNode;
 import vaft.config.ClusterConfig;
@@ -12,13 +10,17 @@ import vaft.config.NetworkConfig;
 import vaft.config.NodeInfo;
 import vaft.core.RaftState;
 import vaft.transport.NetworkPartitionTable;
+import vaft.transport.RaftRpcHandler;
 import vaft.transport.RaftTransport;
+import vaft.transport.TcpServer;
 import vaft.transport.impl.TcpRaftTransport;
+import vaft.transport.impl.TestRaftRpcHandler;
 import vaft.utils.UltiMethod;
 public class App {
     public static RaftNode raftNode;
-    public static void main(String[] args) {
-        String selfNodeId = UltiMethod.getNodeIdFromArgs(args);
+    public static TcpServer tcpServer;
+    public static void main(String[] args) throws Exception {
+        int selfNodeId = UltiMethod.getNodeIdFromArgs(args);
         ClusterConfig config = ClusterConfig.loadFromFile(UltiMethod.getConfigPathFromArgs(args), selfNodeId);
         NetworkConfig networkConfig = config.getNetworkConfig();
         ElectionConfig electionConfig = config.getElectionConfig();
@@ -27,49 +29,31 @@ public class App {
         RaftState raftState = new RaftState();
 
         NetworkPartitionTable partitionTable = new NetworkPartitionTable();
-        Duration connectTimeout = Duration.ofMillis(networkConfig.getConnectTimeoutMs());
-        Duration soTimeout = Duration.ofMillis(networkConfig.getRequestTimeoutMs());
-        RaftTransport transport = new TcpRaftTransport(selfNode, config.getPeers(), partitionTable, connectTimeout, soTimeout);
+        // Duration connectTimeout = Duration.ofMillis(networkConfig.getConnectTimeoutMs());
+        // Duration soTimeout = Duration.ofMillis(networkConfig.getRequestTimeoutMs());
+
+        RaftRpcHandler rpcHandler = new TestRaftRpcHandler();
+        RaftTransport transport = new TcpRaftTransport(config, rpcHandler, partitionTable);
 
         // ElectionService electionService = new ElectionService(electionConfig);
         
         // ReplicationService replicationService = new ReplicationService();
-
         App.raftNode = new RaftNode(config, selfNode, raftState, transport, null, null, null);
         System.out.println("Hello, this is a Vaft node. " + "My ID is " + selfNode.getId() + " and my address is " + selfNode.getHost() + ":" + selfNode.getPort() + ".");
-        startNode();
-    }
+        transport.start();
 
-    private static void startNode() {
-        try {
-            ServerSocket sc = new ServerSocket(raftNode.getSelf().getPort());
-            while (true) {
-                Socket socket = sc.accept();
-                new ServerThread(socket).start();
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-}
+        Thread.sleep(ThreadLocalRandom.current().nextLong(2000, 5001));
+        transport.sendRequestVote(selfNodeId % 3 + 1, new vaft.protocol.RequestVoteRequest(1, 1, 1, 1));
 
-class ServerThread extends Thread {
-    private Socket socket;
+        // Docker shutdown hook để dừng server khi container bị dừng
+        CountDownLatch keepAliveLatch = new CountDownLatch(1);
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            System.out.println("Shutting down Vaft node...");
+            tcpServer.stop();
+            keepAliveLatch.countDown();
+        }));
 
-    public ServerThread(Socket socket) {
-        this.socket = socket;
-    }
-
-    @Override
-    public void run() {
-        try {
-            DataInputStream dis = new DataInputStream(socket.getInputStream());
-            int message;
-            while ((message = dis.read()) != -1) {
-                System.out.println("Received a message from " + socket.getInetAddress().getHostAddress() + ":" + socket.getPort());
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        // 3. Giữ tiến trình chạy mãi mãi cho đến khi bị tắt
+        keepAliveLatch.await();
     }
 }

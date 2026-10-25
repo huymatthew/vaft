@@ -1,8 +1,15 @@
 package vaft.transport;
 
-import vaft.protocol.*;
+import java.io.IOException;
+
+import vaft.protocol.AppendEntriesRequest;
+import vaft.protocol.AppendEntriesResponse;
+import vaft.protocol.RequestVoteRequest;
+import vaft.protocol.RequestVoteResponse;
 
 public interface RaftTransport {
-    RequestVoteResponse sendRequestVote(String targetNodeId, RequestVoteRequest request);
-    AppendEntriesResponse sendAppendEntries(String targetNodeId, AppendEntriesRequest request);
+    RequestVoteResponse sendRequestVote(int targetNodeId, RequestVoteRequest request);
+    AppendEntriesResponse sendAppendEntries(int targetNodeId, AppendEntriesRequest request);
+    void start() throws IOException;
+    void stop();
 }
