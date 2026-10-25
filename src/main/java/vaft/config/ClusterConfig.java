@@ -2,6 +2,7 @@ package vaft.config;
 
 import java.io.FileInputStream;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
@@ -11,11 +12,25 @@ import org.yaml.snakeyaml.constructor.Constructor;
 
 public class ClusterConfig {
     private List<NodeInfo> nodes;
-    private NodeInfo self; // Thông tin ip,port về Node hiện tại (self) trong cụm.
-
+    private NodeInfo self;
+    private ElectionConfig electionConfig;
+    private NetworkConfig networkConfig;
     // 1. Constructor rỗng cho SnakeYAML
     public ClusterConfig() {}
 
+    // 3. Chuyển logic đọc file thành Factory Method (hàm static)
+    public static ClusterConfig loadFromFile(String configFilePath, String selfNodeId) {
+        try {
+            Yaml yaml = new Yaml(new Constructor(ClusterConfig.class, new LoaderOptions()));
+            FileInputStream inputStream = new FileInputStream(configFilePath);
+            ClusterConfig config = yaml.loadAs(inputStream, ClusterConfig.class);
+            config.setSelf(config.getNodeById(selfNodeId));
+            return config;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
     // 2. Setter để SnakeYAML gán danh sách nodes vào
     public void setNodes(List<NodeInfo> nodes) {
         this.nodes = nodes;
@@ -27,18 +42,6 @@ public class ClusterConfig {
 
     public void setSelf(NodeInfo self) {
         this.self = self;
-    }
-
-    // 3. Chuyển logic đọc file thành Factory Method (hàm static)
-    public static ClusterConfig loadFromFile(String configFilePath) {
-        try {
-            Yaml yaml = new Yaml(new Constructor(ClusterConfig.class, new LoaderOptions()));
-            FileInputStream inputStream = new FileInputStream(configFilePath);
-            return yaml.loadAs(inputStream, ClusterConfig.class);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return null;
-        }
     }
 
     public NodeInfo getNodeById(String nodeId) {
@@ -62,7 +65,29 @@ public class ClusterConfig {
                 .collect(Collectors.toUnmodifiableList());
     }
 
+    public Map<String, NodeInfo> getPeers() {
+        return nodes == null ? Map.of() : nodes.stream()
+                .filter(node -> !Objects.equals(node.getId(), self.getId()))
+                .collect(Collectors.toUnmodifiableMap(NodeInfo::getId, node -> node));
+    }
+
     public int getQuorumSize() {
         return nodes == null ? 0 : nodes.size() / 2 + 1;
+    }
+
+    public ElectionConfig getElectionConfig() {
+        return electionConfig;
+    }
+
+    public void setElectionConfig(ElectionConfig electionConfig) {
+        this.electionConfig = electionConfig;
+    }
+
+    public NetworkConfig getNetworkConfig() {
+        return networkConfig;
+    }
+
+    public void setNetworkConfig(NetworkConfig networkConfig) {
+        this.networkConfig = networkConfig;
     }
 }
