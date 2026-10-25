@@ -8,16 +8,16 @@ import java.util.concurrent.locks.ReentrantLock;
 import vaft.protocol.LogEntry;
 
 public class RaftState {
-    private int currentTerm;
-    private String votedFor;
-    private NodeRole role = NodeRole.FOLLOWER;
-    private String leaderId;
-    private int commitIndex;
-    private int lastApplied;
+    private int currentTerm; //Term hiện tại của Node, được tăng lên khi Node trở thành Candidate hoặc nhận được Term mới từ Leader khác.
+    private String votedFor; //ID của Node mà Node này đã bỏ phiếu trong Term hiện tại. Nếu chưa bỏ phiếu, giá trị này là null.
+    private NodeRole role = NodeRole.FOLLOWER; // Vai trò hiện tại của Node: FOLLOWER, CANDIDATE, hoặc LEADER.
+    private String leaderId; //ID của Node mà Node này nhận diện là Leader hiện tại. Nếu chưa biết, giá trị này là null.
+    private int commitIndex; // Chỉ số của log entry đã được commit (được áp dụng cho state machine). Node sẽ áp dụng các log entry từ lastApplied + 1 đến commitIndex.
+    private int lastApplied; // Chỉ số của log entry đã được áp dụng cho state machine.
     private final Map<String, Integer> nextIndex = new HashMap<>();
     private final Map<String, Integer> matchIndex = new HashMap<>();
-    private final List<LogEntry> log = new java.util.ArrayList<>();
-    private final ReentrantLock lock = new ReentrantLock();
+    private final List<LogEntry> log = new java.util.ArrayList<>();// Danh sách log entries, mỗi entry chứa thông tin về command và term. Chỉ số của log entry bắt đầu từ 1 (index 0 là giả định).
+    private final ReentrantLock lock = new ReentrantLock();//
 
     public <T> T withLock(java.util.function.Supplier<T> action) {
         lock.lock();
@@ -28,6 +28,22 @@ public class RaftState {
         lock.lock();
         try { action.run(); } finally { lock.unlock(); }
     }
+
+    /**
+     * Kiểm tra Term đến từ RPC. Nếu lớn hơn Term hiện tại thì cập nhật và lùi về làm Follower.
+     * @return true nếu node thực sự đã step down.
+     */
+    public boolean checkTermAndStepDown(int rpcTerm) {
+        if (rpcTerm > this.currentTerm) {
+            this.currentTerm = rpcTerm;
+            this.votedFor = null;
+            this.role = NodeRole.FOLLOWER;
+            // Gọi hàm lưu xuống đĩa (Persistence) ở đây nếu có
+            return true;
+        }
+        return false;
+    }
+
 
     public int getCurrentTerm() { return currentTerm; }
     public String getVotedFor() { return votedFor; }
