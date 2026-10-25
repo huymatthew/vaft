@@ -1,17 +1,4 @@
 package vaft.replication.impl;
-import vaft.config.ClusterConfig;
-import vaft.core.RaftState;
-import vaft.config.NodeInfo;
-import vaft.core.NodeRole;
-import vaft.protocol.AppendEntriesRequest;
-import vaft.protocol.AppendEntriesResponse;
-import vaft.protocol.LogEntry;
-import vaft.protocol.ClientCommandResult;
-import vaft.replication.RaftLogManager;
-import vaft.replication.ReplicationService;
-import vaft.state.StateMachine;
-import vaft.transport.TcpRaftTransport;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -19,6 +6,19 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
+
+import vaft.config.ClusterConfig;
+import vaft.config.NodeInfo;
+import vaft.core.NodeRole;
+import vaft.core.RaftState;
+import vaft.protocol.AppendEntriesRequest;
+import vaft.protocol.AppendEntriesResponse;
+import vaft.protocol.ClientCommandResult;
+import vaft.protocol.LogEntry;
+import vaft.replication.RaftLogManager;
+import vaft.replication.ReplicationService;
+import vaft.state.StateMachine;
+import vaft.transport.impl.TcpRaftTransport;
 
 public class ReplicationServiceImpl implements ReplicationService {
     private final RaftState raftState;
@@ -60,10 +60,9 @@ public class ReplicationServiceImpl implements ReplicationService {
     public void onBecomeLeader() {
         raftState.withLock(() -> {
             int lastLogIndex = logManager.getLastLogIndex();
-            String selfId = clusterConfig.getSelf().getId();
             
-            for (NodeInfo peer : clusterConfig.getPeers(selfId)) {
-                String peerId = peer.getId();
+            for (NodeInfo peer : clusterConfig.getPeersList()) {
+                int peerId = peer.getId();
                 raftState.getNextIndex().put(peerId, lastLogIndex + 1);
                 raftState.getMatchIndex().put(peerId, 0); 
             }
@@ -89,13 +88,15 @@ public class ReplicationServiceImpl implements ReplicationService {
 
     @Override
     public void onHeartbeatTick() {
-        String selfId = clusterConfig.getSelf().getId();
-        for (NodeInfo peer : clusterConfig.getPeers(selfId)) {
-            replicateToPeer(peer.getId());
+        int selfId = clusterConfig.getSelf().getId();
+        for (NodeInfo peer : clusterConfig.getPeersList()) {
+            if (peer.getId() != selfId) {
+                replicateToPeer(peer.getId());
+            }
         }
     }
 
-    private void replicateToPeer(String peerId) {
+    private void replicateToPeer(int peerId) {
         rpcExecutor.submit(() -> {
             final AppendEntriesRequest[] requestHolder = new AppendEntriesRequest[1];
             final int[] termHolder = new int[1];
@@ -255,10 +256,9 @@ public class ReplicationServiceImpl implements ReplicationService {
             int applyIdx = raftState.getLastApplied() + 1;
             LogEntry entry = logManager.getEntry(applyIdx);
             
-            String result = null;
             // Gọi getCommand() thay vì command()
             if (entry.command() != null) {
-                result = stateMachine.apply(entry.command());
+                stateMachine.apply(entry.command());
             }
             
             raftState.setLastApplied(applyIdx);
@@ -267,7 +267,7 @@ public class ReplicationServiceImpl implements ReplicationService {
             if (future != null) {
                 // Gọi getTerm() thay vì term()
                 future.complete(new ClientCommandResult(
-                        true, "COMMITTED", raftState.getLeaderId(), applyIdx, entry.getTerm(), result
+                        true, "COMMITTED", raftState.getLeaderId(), applyIdx, entry.term(), null
                 ));
             }
         }

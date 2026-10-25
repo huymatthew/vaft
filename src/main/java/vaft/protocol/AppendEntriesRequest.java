@@ -9,7 +9,7 @@ public class AppendEntriesRequest {
     private List<LogEntry> entries = java.util.List.of();
     private int leaderCommit;
 
-    public AppendEntriesRequest(int term, String leaderId, int prevLogIndex, int prevLogTerm, List<LogEntry> entries, int leaderCommit) {
+    public AppendEntriesRequest(int term, int leaderId, int prevLogIndex, int prevLogTerm, List<LogEntry> entries, int leaderCommit) {
         this.term = term;
         this.leaderId = leaderId;
         this.prevLogIndex = prevLogIndex;
@@ -19,14 +19,6 @@ public class AppendEntriesRequest {
     }
 
     public AppendEntriesRequest() {}
-    public AppendEntriesRequest(int term, int leaderId, int prevLogIndex, int prevLogTerm, java.util.List<LogEntry> entries, int leaderCommit) {
-        this.term = term;
-        this.leaderId = leaderId;
-        this.prevLogIndex = prevLogIndex;
-        this.prevLogTerm = prevLogTerm;
-        this.entries = entries;
-        this.leaderCommit = leaderCommit;
-    }
     public int getTerm() { return term; }
     public void setTerm(int term) { this.term = term; }
     public int getLeaderId() { return leaderId; }

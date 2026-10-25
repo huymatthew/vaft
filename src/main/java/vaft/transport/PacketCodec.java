@@ -61,6 +61,8 @@ public class PacketCodec {
                 out.writeInt(res.getTerm());
                 out.writeBoolean(res.isSuccess());
                 out.writeInt(res.getMatchIndex());
+                out.writeInt(res.getConflictIndex());
+                out.writeInt(res.getConflictTerm());
             }
         }
 
@@ -108,6 +110,7 @@ public class PacketCodec {
             case APPEND_ENTRIES_RES -> new AppendEntriesResponse(
                     in.readInt(),
                     in.readBoolean(),
+                    in.readInt(),
                     in.readInt(),
                     in.readInt()
             );

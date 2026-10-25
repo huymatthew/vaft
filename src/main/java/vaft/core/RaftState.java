@@ -11,11 +11,11 @@ public class RaftState {
     private int currentTerm; //Term hiện tại của Node, được tăng lên khi Node trở thành Candidate hoặc nhận được Term mới từ Leader khác.
     private String votedFor; //ID của Node mà Node này đã bỏ phiếu trong Term hiện tại. Nếu chưa bỏ phiếu, giá trị này là null.
     private NodeRole role = NodeRole.FOLLOWER; // Vai trò hiện tại của Node: FOLLOWER, CANDIDATE, hoặc LEADER.
-    private String leaderId; //ID của Node mà Node này nhận diện là Leader hiện tại. Nếu chưa biết, giá trị này là null.
+    private int leaderId; //ID của Node mà Node này nhận diện là Leader hiện tại. Nếu chưa biết, giá trị này là null.
     private int commitIndex; // Chỉ số của log entry đã được commit (được áp dụng cho state machine). Node sẽ áp dụng các log entry từ lastApplied + 1 đến commitIndex.
     private int lastApplied; // Chỉ số của log entry đã được áp dụng cho state machine.
-    private final Map<String, Integer> nextIndex = new HashMap<>();
-    private final Map<String, Integer> matchIndex = new HashMap<>();
+    private final Map<Integer, Integer> nextIndex = new HashMap<>();
+    private final Map<Integer, Integer> matchIndex = new HashMap<>();
     private final List<LogEntry> log = new java.util.ArrayList<>();// Danh sách log entries, mỗi entry chứa thông tin về command và term. Chỉ số của log entry bắt đầu từ 1 (index 0 là giả định).
     private final ReentrantLock lock = new ReentrantLock();//
 
@@ -48,17 +48,17 @@ public class RaftState {
     public int getCurrentTerm() { return currentTerm; }
     public String getVotedFor() { return votedFor; }
     public NodeRole getRole() { return role; }
-    public String getLeaderId() { return leaderId; }
+    public int getLeaderId() { return leaderId; }
     public int getCommitIndex() { return commitIndex; }
     public int getLastApplied() { return lastApplied; }
     public List<LogEntry> getLog() { return List.copyOf(log); }
-    public Map<String, Integer> getNextIndex() { return Map.copyOf(nextIndex); }
-    public Map<String, Integer> getMatchIndex() { return Map.copyOf(matchIndex); }
+    public Map<Integer, Integer> getNextIndex() { return Map.copyOf(nextIndex); } //?????
+    public Map<Integer, Integer> getMatchIndex() { return Map.copyOf(matchIndex); }
 
     public void setCurrentTerm(int currentTerm) { this.currentTerm = currentTerm; }
     public void setVotedFor(String votedFor) { this.votedFor = votedFor; }
     public void setRole(NodeRole role) { this.role = role; }
-    public void setLeaderId(String leaderId) { this.leaderId = leaderId; }
+    public void setLeaderId(int leaderId) { this.leaderId = leaderId; }
     public void setCommitIndex(int commitIndex) { this.commitIndex = commitIndex; }
     public void setLastApplied(int lastApplied) { this.lastApplied = lastApplied; }
     public int getLastLogIndex() { return log.isEmpty() ? 0 : log.get(log.size() - 1).index(); }
@@ -66,7 +66,7 @@ public class RaftState {
 
     public void becomeCandidate() { role = NodeRole.CANDIDATE; }
     public void becomeLeader() { role = NodeRole.LEADER; }
-    public void becomeFollower(int term, String leaderId) {
+    public void becomeFollower(int term, int leaderId) {
         currentTerm = term;
         this.leaderId = leaderId;
         role = NodeRole.FOLLOWER;
