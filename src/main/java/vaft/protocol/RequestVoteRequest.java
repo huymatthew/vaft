@@ -2,19 +2,19 @@ package vaft.protocol;
 
 public class RequestVoteRequest {
     private int term;
-    private String candidateId;
+    private int candidateId;
     private int lastLogIndex;
     private int lastLogTerm;
 
     public RequestVoteRequest() {}
-    public RequestVoteRequest(int term, String candidateId, int lastLogIndex, int lastLogTerm) {
+    public RequestVoteRequest(int term, int candidateId, int lastLogIndex, int lastLogTerm) {
         this.term = term; this.candidateId = candidateId;
         this.lastLogIndex = lastLogIndex; this.lastLogTerm = lastLogTerm;
     }
     public int getTerm() { return term; }
     public void setTerm(int term) { this.term = term; }
-    public String getCandidateId() { return candidateId; }
-    public void setCandidateId(String candidateId) { this.candidateId = candidateId; }
+    public int getCandidateId() { return candidateId; }
+    public void setCandidateId(int candidateId) { this.candidateId = candidateId; }
     public int getLastLogIndex() { return lastLogIndex; }
     public void setLastLogIndex(int lastLogIndex) { this.lastLogIndex = lastLogIndex; }
     public int getLastLogTerm() { return lastLogTerm; }

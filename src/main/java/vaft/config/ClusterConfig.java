@@ -19,7 +19,7 @@ public class ClusterConfig {
     public ClusterConfig() {}
 
     // 3. Chuyển logic đọc file thành Factory Method (hàm static)
-    public static ClusterConfig loadFromFile(String configFilePath, String selfNodeId) {
+    public static ClusterConfig loadFromFile(String configFilePath, int selfNodeId) {
         try {
             Yaml yaml = new Yaml(new Constructor(ClusterConfig.class, new LoaderOptions()));
             FileInputStream inputStream = new FileInputStream(configFilePath);
@@ -44,10 +44,10 @@ public class ClusterConfig {
         this.self = self;
     }
 
-    public NodeInfo getNodeById(String nodeId) {
+    public NodeInfo getNodeById(int nodeId) {
         if (nodes != null) {
             for (NodeInfo node : nodes) {
-                if (node.getId().equals(nodeId)) {
+                if (node.getId() == nodeId) {
                     return node;
                 }
             }
@@ -59,13 +59,13 @@ public class ClusterConfig {
         return self;
     }
 
-    public List<NodeInfo> getPeers(String selfNodeId) {
+    public List<NodeInfo> getPeersList() {
         return nodes == null ? List.of() : nodes.stream()
-                .filter(node -> !Objects.equals(node.getId(), selfNodeId))
+                .filter(node -> !Objects.equals(node.getId(), self.getId()))
                 .collect(Collectors.toUnmodifiableList());
     }
 
-    public Map<String, NodeInfo> getPeers() {
+    public Map<Integer, NodeInfo> getPeers() {
         return nodes == null ? Map.of() : nodes.stream()
                 .filter(node -> !Objects.equals(node.getId(), self.getId()))
                 .collect(Collectors.toUnmodifiableMap(NodeInfo::getId, node -> node));

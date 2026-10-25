@@ -2,21 +2,28 @@ package vaft.protocol;
 
 public class RpcEnvelope {
     private MessageType messageType;
-    private String senderId;
-    private String receiverId;
-    private String requestId;
+    private int senderId;
+    private int receiverId;
+    private int requestId;
     private Object payload;
 
     public RpcEnvelope() {}
 
-    public RpcEnvelope(MessageType type, String senderId, Object payload) {
+    public RpcEnvelope(MessageType type, int senderId, Object payload) {
         this.messageType = type;
         this.senderId = senderId;
         this.payload = payload;
     }
 
-    public RpcEnvelope(MessageType messageType, String senderId, String receiverId,
-                       String requestId, Object payload) {
+    public RpcEnvelope(MessageType type, int senderId, int receiverId, Object payload) {
+        this.messageType = type;
+        this.senderId = senderId;
+        this.receiverId = receiverId;
+        this.payload = payload;
+    }
+
+    public RpcEnvelope(MessageType messageType, int senderId, int receiverId,
+                       int requestId, Object payload) {
         this.messageType = messageType;
         this.senderId = senderId;
         this.receiverId = receiverId;
@@ -40,18 +47,18 @@ public class RpcEnvelope {
         this.messageType = messageType;
     }
 
-    public String getSenderId() {
+    public int getSenderId() {
         return senderId;
     }
 
-    public void setSenderId(String senderId) {
+    public void setSenderId(int senderId) {
         this.senderId = senderId;
     }
 
-    public String getReceiverId() { return receiverId; }
-    public void setReceiverId(String receiverId) { this.receiverId = receiverId; }
-    public String getRequestId() { return requestId; }
-    public void setRequestId(String requestId) { this.requestId = requestId; }
+    public int getReceiverId() { return receiverId; }
+    public void setReceiverId(int receiverId) { this.receiverId = receiverId; }
+    public int getRequestId() { return requestId; }
+    public void setRequestId(int requestId) { this.requestId = requestId; }
 
     public Object getPayload() {
         return payload;
