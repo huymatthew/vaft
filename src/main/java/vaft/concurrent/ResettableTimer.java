@@ -3,18 +3,44 @@ package vaft.concurrent;
 import java.time.Duration;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
-import java.util.function.IntSupplier;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 
 public class ResettableTimer implements AutoCloseable {
     private final ScheduledExecutorService executor;
-    private final Duration delay;
+    private final long minDelayMs;
+    private final long maxDelayMs;
     private final Runnable action;
     private ScheduledFuture<?> future;
 
-    public ResettableTimer(ScheduledExecutorService executor, Duration delay, Runnable action) {
-        this.executor = executor; this.delay = delay; this.action = action;
+    public ResettableTimer(ScheduledExecutorService executor, long minDelayMs, long maxDelayMs, Runnable action) {
+        this.executor = executor;
+        this.minDelayMs = minDelayMs;
+        this.maxDelayMs = maxDelayMs;
+        this.action = action;
     }
-    public synchronized void reset() { cancel(); future = executor.schedule(action, delay.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS); }
-    public synchronized void cancel() { if (future != null) future.cancel(false); }
-    @Override public void close() { cancel(); }
+
+    /**
+     * Hủy lượt đếm cũ và lập lịch chạy mới với khoảng thời gian ngẫu nhiên
+     * [minDelayMs, maxDelayMs]
+     */
+    public synchronized void reset() {
+        cancel();
+        long delay = (minDelayMs == maxDelayMs)
+                ? minDelayMs
+                : ThreadLocalRandom.current().nextLong(minDelayMs, maxDelayMs + 1);
+        future = executor.schedule(action, delay, TimeUnit.MILLISECONDS);
+    }
+
+    public synchronized void cancel() {
+        if (future != null) {
+            future.cancel(false);
+            future = null;
+        }
+    }
+
+    @Override
+    public void close() {
+        cancel();
+    }
 }
