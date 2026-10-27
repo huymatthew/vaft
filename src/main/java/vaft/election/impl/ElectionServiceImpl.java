@@ -1,11 +1,13 @@
 package vaft.election.impl;
 
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import vaft.concurrent.ResettableTimer;
 import vaft.config.ClusterConfig;
+import vaft.config.ElectionConfig;
 import vaft.config.NodeInfo;
 import vaft.core.NodeRole;
 import vaft.core.RaftState;
@@ -27,20 +29,30 @@ public class ElectionServiceImpl implements ElectionService {
     private final ReplicationService replicationService;
 
     public ElectionServiceImpl(
-            RaftState raftState,
-            RaftLogView logView,
-            ClusterConfig clusterConfig,
-            RaftTransport transport,
-            ExecutorService rpcExecutor,
-            ResettableTimer electionTimer,
-            ReplicationService replicationService) {
+        RaftState raftState,
+        RaftLogView logView,
+        ClusterConfig clusterConfig,
+        RaftTransport transport,
+        ExecutorService rpcExecutor,
+        ScheduledExecutorService scheduler,
+        ReplicationService replicationService) {
+
         this.raftState = raftState;
         this.logView = logView;
         this.clusterConfig = clusterConfig;
         this.transport = transport;
         this.rpcExecutor = rpcExecutor;
-        this.electionTimer = electionTimer;
         this.replicationService = replicationService;
+
+        ElectionConfig electionConfig = clusterConfig.getElectionConfig();
+
+        this.electionTimer = new ResettableTimer(
+                scheduler,
+                electionConfig.getMinTimeoutMs(),
+                electionConfig.getMaxTimeoutMs(),
+                this::onElectionTimeout
+        );
+        this.electionTimer.reset();
     }
 
     @Override
