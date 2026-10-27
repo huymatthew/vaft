@@ -3,6 +3,7 @@ package vaft.dashboard;
 import java.util.List;
 import java.util.Map;
 
+import vaft.config.NodeInfo;
 import vaft.core.NodeRole;
 import vaft.protocol.LogEntry;
 
@@ -15,9 +16,11 @@ public record NodeStatusSnapshot(
                 int commitIndex,
                 List<LogEntry> log,
                 Map<String, String> stateMachine,
-                boolean networkIsolated) {
+                boolean networkIsolated,
+                List<NodeInfo> clusterNodes,
+                Map<Integer, Integer> matchIndex) {
         /**
-         * Chuyển đổi trạng thái Node thành chuỗi JSON để gửi cho trình duyệt Web
+         * Chuyển đổi trạng thái toàn cụm thành JSON cho giao diện Web
          */
         public String toJson() {
                 StringBuilder sb = new StringBuilder();
@@ -30,7 +33,34 @@ public record NodeStatusSnapshot(
                 sb.append("\"commitIndex\":").append(commitIndex).append(",");
                 sb.append("\"networkIsolated\":").append(networkIsolated).append(",");
 
-                // Chuyển đổi danh sách log entries thành mảng JSON
+                // 1. Danh sách các node trong toàn cụm
+                sb.append("\"clusterNodes\":[");
+                if (clusterNodes != null && !clusterNodes.isEmpty()) {
+                        for (int i = 0; i < clusterNodes.size(); i++) {
+                                NodeInfo node = clusterNodes.get(i);
+                                sb.append("{\"id\":").append(node.getId())
+                                                .append(",\"host\":\"").append(node.getHost()).append("\"")
+                                                .append(",\"port\":").append(node.getPort()).append("}");
+                                if (i < clusterNodes.size() - 1)
+                                        sb.append(",");
+                        }
+                }
+                sb.append("],");
+
+                // 2. Trạng thái matchIndex (tiến độ đồng bộ từ Leader)
+                sb.append("\"matchIndex\":{");
+                if (matchIndex != null && !matchIndex.isEmpty()) {
+                        int count = 0;
+                        int total = matchIndex.size();
+                        for (Map.Entry<Integer, Integer> e : matchIndex.entrySet()) {
+                                sb.append("\"").append(e.getKey()).append("\":").append(e.getValue());
+                                if (++count < total)
+                                        sb.append(",");
+                        }
+                }
+                sb.append("},");
+
+                // 3. Danh sách log entries
                 sb.append("\"log\":[");
                 if (log != null && !log.isEmpty()) {
                         for (int i = 0; i < log.size(); i++) {
@@ -48,7 +78,7 @@ public record NodeStatusSnapshot(
                 }
                 sb.append("],");
 
-                // Chuyển đổi dữ liệu StateMachine (Key-Value)
+                // 4. Dữ liệu StateMachine (Key-Value)
                 sb.append("\"stateMachine\":{");
                 if (stateMachine != null && !stateMachine.isEmpty()) {
                         int count = 0;
