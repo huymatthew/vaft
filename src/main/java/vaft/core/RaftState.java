@@ -52,8 +52,13 @@ public class RaftState {
     public int getCommitIndex() { return commitIndex; }
     public int getLastApplied() { return lastApplied; }
     public List<LogEntry> getLog() { return List.copyOf(log); }
-    public Map<Integer, Integer> getNextIndex() { return Map.copyOf(nextIndex); } //?????
-    public Map<Integer, Integer> getMatchIndex() { return Map.copyOf(matchIndex); }
+    public Map<Integer, Integer> getNextIndex() {
+        return nextIndex;
+    }
+
+    public Map<Integer, Integer> getMatchIndex() {
+        return matchIndex;
+    }
 
     public void setCurrentTerm(int currentTerm) { this.currentTerm = currentTerm; }
     public void setVotedFor(String votedFor) { this.votedFor = votedFor; }
