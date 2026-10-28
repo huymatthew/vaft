@@ -26,7 +26,7 @@ public class TestLog implements RaftLogView {
 
     @Override
     public boolean isCandidateLogUpToDate(int candidateLastLogIndex, int candidateLastLogTerm) {
-        return false;
+        return true; // Luon luon chap nhan
     }
  
     @Override 

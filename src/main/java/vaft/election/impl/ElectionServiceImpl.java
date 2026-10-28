@@ -185,4 +185,8 @@ public class ElectionServiceImpl implements ElectionService {
             replicationService.onBecomeLeader();
         }
     }
+
+    public void resetElectionTimer() {
+        electionTimer.reset();
+    }
 }
