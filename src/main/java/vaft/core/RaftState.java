@@ -9,7 +9,7 @@ import vaft.protocol.LogEntry;
 
 public class RaftState {
     private int currentTerm; //Term hiện tại của Node, được tăng lên khi Node trở thành Candidate hoặc nhận được Term mới từ Leader khác.
-    private String votedFor; //ID của Node mà Node này đã bỏ phiếu trong Term hiện tại. Nếu chưa bỏ phiếu, giá trị này là null.
+    private int votedFor; //ID của Node mà Node này đã bỏ phiếu trong Term hiện tại. Nếu chưa bỏ phiếu, giá trị này là -1.
     private NodeRole role = NodeRole.FOLLOWER; // Vai trò hiện tại của Node: FOLLOWER, CANDIDATE, hoặc LEADER.
     private int leaderId; //ID của Node mà Node này nhận diện là Leader hiện tại. Nếu chưa biết, giá trị này là null.
     private int commitIndex; // Chỉ số của log entry đã được commit (được áp dụng cho state machine). Node sẽ áp dụng các log entry từ lastApplied + 1 đến commitIndex.
@@ -36,7 +36,7 @@ public class RaftState {
     public boolean checkTermAndStepDown(int rpcTerm) {
         if (rpcTerm > this.currentTerm) {
             this.currentTerm = rpcTerm;
-            this.votedFor = null;
+            this.votedFor = -1;
             this.role = NodeRole.FOLLOWER;
             // Gọi hàm lưu xuống đĩa (Persistence) ở đây nếu có
             return true;
@@ -46,7 +46,7 @@ public class RaftState {
 
 
     public int getCurrentTerm() { return currentTerm; }
-    public String getVotedFor() { return votedFor; }
+    public int getVotedFor() { return votedFor; }
     public NodeRole getRole() { return role; }
     public int getLeaderId() { return leaderId; }
     public int getCommitIndex() { return commitIndex; }
@@ -61,7 +61,7 @@ public class RaftState {
     }
 
     public void setCurrentTerm(int currentTerm) { this.currentTerm = currentTerm; }
-    public void setVotedFor(String votedFor) { this.votedFor = votedFor; }
+    public void setVotedFor(int votedFor) { this.votedFor = votedFor; }
     public void setRole(NodeRole role) { this.role = role; }
     public void setLeaderId(int leaderId) { this.leaderId = leaderId; }
     public void setCommitIndex(int commitIndex) { this.commitIndex = commitIndex; }

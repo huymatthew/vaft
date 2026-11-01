@@ -72,9 +72,8 @@ public class ElectionServiceImpl implements ElectionService {
             }
 
             // Chỉ vote nếu chưa bỏ phiếu cho ai khác trong term này
-            String votedFor = raftState.getVotedFor();
-            String candidateIdStr = String.valueOf(req.getCandidateId());
-            boolean canVote = (votedFor == null || votedFor.equals(candidateIdStr));
+            int votedFor = raftState.getVotedFor();
+            boolean canVote = (votedFor == -1 || votedFor == req.getCandidateId());
 
             // Kiểm tra log của ứng viên có đủ mới hay không (Raft Figure 2)
             boolean logOk = logView.isCandidateLogUpToDate(
@@ -83,7 +82,7 @@ public class ElectionServiceImpl implements ElectionService {
 
             // Đồng ý bỏ phiếu và reset lại timer của node
             if (canVote && logOk) {
-                raftState.setVotedFor(candidateIdStr);
+                raftState.setVotedFor(req.getCandidateId());
                 electionTimer.reset();
                 return new RequestVoteResponse(currentTerm, true);
             }
@@ -110,7 +109,7 @@ public class ElectionServiceImpl implements ElectionService {
             termHolder[0] = newTerm;
 
             int selfId = clusterConfig.getSelf().getId();
-            raftState.setVotedFor(String.valueOf(selfId));
+            raftState.setVotedFor(selfId);
             electionTimer.reset();
 
             int lastLogIndex = logView.getLastLogIndex();
@@ -186,6 +185,7 @@ public class ElectionServiceImpl implements ElectionService {
         }
     }
 
+    @Override 
     public void resetElectionTimer() {
         electionTimer.reset();
     }
