@@ -13,15 +13,17 @@ import vaft.protocol.RpcEnvelope;
 
 public class PeerConnection {
     private final NodeInfo targetPeer;
-    private final int connectTimeoutMs = 100;
-    private final int readTimeoutMs = 150;
+    private final int connectTimeoutMs;
+    private final int readTimeoutMs;
 
     private Socket socket;
     private DataOutputStream out;
     private DataInputStream in;
 
-    public PeerConnection(NodeInfo targetPeer) {
+    public PeerConnection(NodeInfo targetPeer, int connectTimeoutMs, int readTimeoutMs) {
         this.targetPeer = targetPeer;
+        this.connectTimeoutMs = connectTimeoutMs;
+        this.readTimeoutMs = readTimeoutMs;
     }
 
     /**

@@ -11,9 +11,9 @@ nodes:
 
 electionConfig:
   heartbeatIntervalMs: 150
-  minTimeoutMs: 300
-  maxTimeoutMs: 600
+  minTimeoutMs: 400
+  maxTimeoutMs: 900
 
 networkConfig:
-  connectTimeoutMs: 1000
-  requestTimeoutMs: 2000
+  connectTimeoutMs: 2000
+  requestTimeoutMs: 3000

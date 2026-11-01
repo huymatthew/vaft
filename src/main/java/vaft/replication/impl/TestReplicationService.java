@@ -99,6 +99,7 @@ public class TestReplicationService implements ReplicationService {
     @Override
     public synchronized void onBecomeLeader() {
         initializeReplicationState();
+        System.out.println("Becoming leader");
 
         if (heartbeatTask == null || heartbeatTask.isCancelled()) {
             heartbeatTask = scheduler.scheduleAtFixedRate(
@@ -131,6 +132,7 @@ public class TestReplicationService implements ReplicationService {
 
     @Override
     public void onHeartbeatTick() {
+        System.out.println("CALL HEARTBEAT TICK");
         if (!raftState.withLock(
                 () -> raftState.getRole() == NodeRole.LEADER)) {
             return;
@@ -138,6 +140,7 @@ public class TestReplicationService implements ReplicationService {
 
         for (NodeInfo peer : clusterConfig.getPeersList()) {
             replicateToPeer(peer.getId());
+            System.out.println("Replicating to peer: " + peer.getId());
         }
     }
 

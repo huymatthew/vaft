@@ -3,9 +3,13 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 import vaft.config.ClusterConfig;
 import vaft.config.NodeInfo;
@@ -18,18 +22,21 @@ import vaft.protocol.LogEntry;
 import vaft.replication.RaftLogManager;
 import vaft.replication.ReplicationService;
 import vaft.state.StateMachine;
-import vaft.transport.impl.TcpRaftTransport;
+import vaft.transport.RaftTransport;
 
 public class ReplicationServiceImpl implements ReplicationService {
     private final RaftState raftState;
     private final RaftLogManager logManager;
     private final ClusterConfig clusterConfig;
-    private final TcpRaftTransport transport;
+    private final RaftTransport transport;
     private final ExecutorService rpcExecutor;
+    private final ScheduledExecutorService scheduler;
     private final Runnable heartbeatTimerStart;
     private final Runnable heartbeatTimerStop;
     private final Runnable electionTimerReset;
     private final StateMachine stateMachine;
+    private ScheduledFuture<?> heartbeatTask;
+    private final Set<Integer> replicatingPeers = ConcurrentHashMap.newKeySet();    
 
     private final Map<Integer, CompletableFuture<ClientCommandResult>> clientFutures;
 
@@ -37,8 +44,9 @@ public class ReplicationServiceImpl implements ReplicationService {
             RaftState raftState, 
             RaftLogManager logManager,
             ClusterConfig clusterConfig, 
-            TcpRaftTransport transport,
+            RaftTransport transport,
             ExecutorService rpcExecutor, 
+            ScheduledExecutorService scheduler,
             StateMachine stateMachine,
             Runnable heartbeatTimerStart, 
             Runnable heartbeatTimerStop, 
@@ -49,6 +57,7 @@ public class ReplicationServiceImpl implements ReplicationService {
         this.clusterConfig = clusterConfig;
         this.transport = transport;
         this.rpcExecutor = rpcExecutor;
+        this.scheduler = scheduler;
         this.stateMachine = stateMachine;
         this.heartbeatTimerStart = heartbeatTimerStart;
         this.heartbeatTimerStop = heartbeatTimerStop;
@@ -69,7 +78,14 @@ public class ReplicationServiceImpl implements ReplicationService {
         });
 
         heartbeatTimerStart.run();
-        onHeartbeatTick();
+        if (heartbeatTask == null || heartbeatTask.isCancelled()) {
+            heartbeatTask = scheduler.scheduleAtFixedRate(
+                    this::onHeartbeatTick,
+                    0,
+                    clusterConfig.getElectionConfig().getHeartbeatIntervalMs(),
+                    TimeUnit.MILLISECONDS
+            );
+        }
     }
 
     @Override
@@ -84,10 +100,21 @@ public class ReplicationServiceImpl implements ReplicationService {
             }
             clientFutures.clear();
         });
+
+        if (heartbeatTask != null) {
+            heartbeatTask.cancel(false);
+            heartbeatTask = null;
+        }
     }
 
     @Override
     public void onHeartbeatTick() {
+        System.out.println("CALL HEARTBEAT TICK");
+        if (!raftState.withLock(
+                () -> raftState.getRole() == NodeRole.LEADER)) {
+            return;
+        }
+        
         int selfId = clusterConfig.getSelf().getId();
         for (NodeInfo peer : clusterConfig.getPeersList()) {
             if (peer.getId() != selfId) {
@@ -97,68 +124,75 @@ public class ReplicationServiceImpl implements ReplicationService {
     }
 
     private void replicateToPeer(int peerId) {
+        if (!replicatingPeers.add(peerId)) {
+            return;
+        }
         rpcExecutor.submit(() -> {
-            final AppendEntriesRequest[] requestHolder = new AppendEntriesRequest[1];
-            final int[] termHolder = new int[1];
+            try{
+                final AppendEntriesRequest[] requestHolder = new AppendEntriesRequest[1];
+                final int[] termHolder = new int[1];
 
-            // BƯỚC 1: Dùng withLock thay vì acquireLock
-            raftState.withLock(() -> {
-                if (raftState.getRole() != NodeRole.LEADER) return;
+                // BƯỚC 1: Dùng withLock thay vì acquireLock
+                raftState.withLock(() -> {
+                    if (raftState.getRole() != NodeRole.LEADER) return;
 
-                termHolder[0] = raftState.getCurrentTerm();
-                int nextIdx = raftState.getNextIndex().getOrDefault(peerId, 1);
-                int prevLogIndex = nextIdx - 1;
-                int prevLogTerm = logManager.getTermAt(prevLogIndex);
-                List<LogEntry> entries = logManager.getEntriesFrom(nextIdx);
+                    termHolder[0] = raftState.getCurrentTerm();
+                    int nextIdx = raftState.getNextIndex().getOrDefault(peerId, 1);
+                    int prevLogIndex = nextIdx - 1;
+                    int prevLogTerm = logManager.getTermAt(prevLogIndex);
+                    List<LogEntry> entries = logManager.getEntriesFrom(nextIdx);
 
-                // Dùng .getId() thay vì .nodeId()
-                requestHolder[0] = new AppendEntriesRequest(
-                        termHolder[0], clusterConfig.getSelf().getId(),
-                        prevLogIndex, prevLogTerm, entries, raftState.getCommitIndex()
-                );
-            });
+                    // Dùng .getId() thay vì .nodeId()
+                    requestHolder[0] = new AppendEntriesRequest(
+                            termHolder[0], clusterConfig.getSelf().getId(),
+                            prevLogIndex, prevLogTerm, entries, raftState.getCommitIndex()
+                    );
+                });
 
-            if (requestHolder[0] == null) return;
+                if (requestHolder[0] == null) return;
 
-            AppendEntriesResponse res = transport.sendAppendEntries(peerId, requestHolder[0]);
-            if (res == null) return; 
+                AppendEntriesResponse res = transport.sendAppendEntries(peerId, requestHolder[0]);
+                if (res == null) return; 
 
-            // BƯỚC 3: Dùng withLock để cập nhật trạng thái
-            raftState.withLock(() -> {
-                // Sửa thành res.getTerm() thay vì res.term()
-                if (raftState.checkTermAndStepDown(res.getTerm())) {
-                    onStepDown();
-                    return;
-                }
-
-                if (raftState.getRole() != NodeRole.LEADER || raftState.getCurrentTerm() != termHolder[0]) {
-                    return;
-                }
-
-                // Sửa thành isSuccess(), getMatchIndex(), getConflictTerm()...
-                if (res.isSuccess()) {
-                    int currentMatch = raftState.getMatchIndex().getOrDefault(peerId, 0);
-                    if (res.getMatchIndex() > currentMatch) {
-                        raftState.getMatchIndex().put(peerId, res.getMatchIndex());
-                        raftState.getNextIndex().put(peerId, res.getMatchIndex() + 1);
-                        advanceCommitIndexIfPossible(); 
+                // BƯỚC 3: Dùng withLock để cập nhật trạng thái
+                raftState.withLock(() -> {
+                    // Sửa thành res.getTerm() thay vì res.term()
+                    if (raftState.checkTermAndStepDown(res.getTerm())) {
+                        onStepDown();
+                        return;
                     }
-                } else {
-                    int nextIdx;
-                    if (res.getConflictTerm() > 0) {
-                        int lastIdxOfConflictTerm = logManager.findFirstIndexOfTerm(res.getConflictTerm(), requestHolder[0].getPrevLogIndex());
-                        if (lastIdxOfConflictTerm > 0) {
-                            nextIdx = lastIdxOfConflictTerm + 1;
+
+                    if (raftState.getRole() != NodeRole.LEADER || raftState.getCurrentTerm() != termHolder[0]) {
+                        return;
+                    }
+
+                    // Sửa thành isSuccess(), getMatchIndex(), getConflictTerm()...
+                    if (res.isSuccess()) {
+                        int currentMatch = raftState.getMatchIndex().getOrDefault(peerId, 0);
+                        if (res.getMatchIndex() > currentMatch) {
+                            raftState.getMatchIndex().put(peerId, res.getMatchIndex());
+                            raftState.getNextIndex().put(peerId, res.getMatchIndex() + 1);
+                            advanceCommitIndexIfPossible(); 
+                        }
+                    } else {
+                        int nextIdx;
+                        if (res.getConflictTerm() > 0) {
+                            int lastIdxOfConflictTerm = logManager.findFirstIndexOfTerm(res.getConflictTerm(), requestHolder[0].getPrevLogIndex());
+                            if (lastIdxOfConflictTerm > 0) {
+                                nextIdx = lastIdxOfConflictTerm + 1;
+                            } else {
+                                nextIdx = res.getConflictIndex();
+                            }
                         } else {
                             nextIdx = res.getConflictIndex();
                         }
-                    } else {
-                        nextIdx = res.getConflictIndex();
+                        raftState.getNextIndex().put(peerId, Math.max(1, nextIdx));
+                        replicateToPeer(peerId); 
                     }
-                    raftState.getNextIndex().put(peerId, Math.max(1, nextIdx));
-                    replicateToPeer(peerId); 
-                }
-            });
+                });
+            } finally {
+                replicatingPeers.remove(peerId);
+            }
         });
     }
 

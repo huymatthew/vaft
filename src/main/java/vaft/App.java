@@ -14,11 +14,10 @@ import vaft.core.RaftState;
 import vaft.election.ElectionService;
 import vaft.election.impl.ElectionServiceImpl;
 import vaft.replication.RaftLogManager;
-import vaft.replication.RaftLogView;
 import vaft.replication.ReplicationService;
-import vaft.replication.impl.TestLog;
-import vaft.replication.impl.TestLogManager;
-import vaft.replication.impl.TestReplicationService;
+import vaft.replication.impl.RaftLogManagerImpl;
+import vaft.replication.impl.ReplicationServiceImpl;
+import vaft.state.StateMachine;
 import vaft.transport.NetworkPartitionTable;
 import vaft.transport.RaftRpcHandler;
 import vaft.transport.RaftTransport;
@@ -26,6 +25,7 @@ import vaft.transport.TcpServer;
 import vaft.transport.impl.RaftRcpHandlerImpl;
 import vaft.transport.impl.TcpRaftTransport;
 import vaft.utils.UltiMethod;
+
 public class App {
     public static RaftNode raftNode;
     public static TcpServer tcpServer;
@@ -44,20 +44,27 @@ public class App {
         RaftTransport transport = new TcpRaftTransport(config, rpcHandler, partitionTable);
 
         // Leader Election Service
-        RaftLogView logView = new TestLog();
         ExecutorService rpcExecutor = Executors.newFixedThreadPool(4);
         ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
-        RaftLogManager logManager = new TestLogManager();
-        AtomicReference<ElectionService> electionServiceHolder =
-                new AtomicReference<>();
-        ReplicationService replicationService = new TestReplicationService(
+        
+        RaftLogManager logManager = new RaftLogManagerImpl(() -> {
+            System.out.println("Save State to DB");
+        });
+        StateMachine stateMachine = new StateMachine();
+        AtomicReference<ElectionService> electionServiceHolder = new AtomicReference<>();
+        ReplicationService replicationService = new ReplicationServiceImpl(
                 raftState,
                 logManager,
                 config,
                 transport,
+                rpcExecutor,
                 scheduler,
+                stateMachine,
+                () -> {},
+                () -> {},
                 () -> electionServiceHolder.get().resetElectionTimer());
-        ElectionService electionService = new ElectionServiceImpl(raftState, logView, config, transport, rpcExecutor, scheduler, replicationService);
+        
+        ElectionService electionService = new ElectionServiceImpl(raftState, logManager, config, transport, rpcExecutor, scheduler, replicationService);
         electionServiceHolder.set(electionService);
         
         // ReplicationService replicationService = new ReplicationService();

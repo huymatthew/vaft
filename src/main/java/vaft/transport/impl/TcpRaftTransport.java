@@ -30,7 +30,7 @@ public class TcpRaftTransport implements RaftTransport {
         this.tcpServer = new TcpServer(config.getSelf().getId(), config.getSelf().getPort(), handler, partitionTable);
 
         for (NodeInfo peer : config.getPeersList()) {
-            peerConnections.put(peer.getId(), new PeerConnection(peer));
+            peerConnections.put(peer.getId(), new PeerConnection(peer, config.getNetworkConfig().getConnectTimeoutMs(), config.getNetworkConfig().getRequestTimeoutMs()));
         }
         System.out.println("Connections count: " + peerConnections.size() + peerConnections.keySet());
     }

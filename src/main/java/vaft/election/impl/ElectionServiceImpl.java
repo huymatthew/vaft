@@ -68,6 +68,7 @@ public class ElectionServiceImpl implements ElectionService {
             // Gặp term lớn hơn thì cập nhật và lùi về Follower
             if (req.getTerm() > currentTerm) {
                 raftState.checkTermAndStepDown(req.getTerm());
+                replicationService.onStepDown();
                 currentTerm = raftState.getCurrentTerm();
             }
 
@@ -152,6 +153,7 @@ public class ElectionServiceImpl implements ElectionService {
                     // Nếu gặp term cao hơn từ phản hồi -> step down
                     if (res.getTerm() > electionTerm) {
                         raftState.checkTermAndStepDown(res.getTerm());
+                        replicationService.onStepDown();
                         return;
                     }
 
