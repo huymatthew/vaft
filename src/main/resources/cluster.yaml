@@ -2,13 +2,15 @@ nodes:
   - id: 1
     host: node1
     port: 9001
+    adminPort: 8001 
   - id: 2
     host: node2
     port: 9002
+    adminPort: 8002
   - id: 3
     host: node3
     port: 9003
-
+    adminPort: 8003
 electionConfig:
   heartbeatIntervalMs: 150
   minTimeoutMs: 400

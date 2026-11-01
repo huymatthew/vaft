@@ -25,6 +25,8 @@ import vaft.transport.TcpServer;
 import vaft.transport.impl.RaftRcpHandlerImpl;
 import vaft.transport.impl.TcpRaftTransport;
 import vaft.utils.UltiMethod;
+import vaft.dashboard.DashboardAdminServer;
+import vaft.dashboard.impl.DashboardAdminServerImpl;
 
 public class App {
     public static RaftNode raftNode;
@@ -66,9 +68,22 @@ public class App {
         
         ElectionService electionService = new ElectionServiceImpl(raftState, logManager, config, transport, rpcExecutor, scheduler, replicationService);
         electionServiceHolder.set(electionService);
-        
+
+
+        DashboardAdminServer dashboardServer = new DashboardAdminServerImpl(
+                selfNode.getId(),
+                selfNode.getAdminPort(),
+                raftState,
+                logManager,
+                stateMachine,
+                partitionTable,
+                replicationService
+        );
+
+        dashboardServer.start();
+
         // ReplicationService replicationService = new ReplicationService();
-        App.raftNode = new RaftNode(config, selfNode, raftState, transport, electionService, replicationService, null);
+        App.raftNode = new RaftNode(config, selfNode, raftState, transport, electionService, replicationService, dashboardServer);
         ((RaftRcpHandlerImpl) rpcHandler).setService(raftNode);
         System.out.println("Hello, this is a Vaft node. " + "My ID is " + selfNode.getId() + " and my address is " + selfNode.getHost() + ":" + selfNode.getPort() + ".");
         transport.start();
@@ -82,6 +97,8 @@ public class App {
             System.out.println("Shutting down Vaft node...");
             tcpServer.stop();
             keepAliveLatch.countDown();
+            dashboardServer.close();
+            transport.stop();
         }));
 
         // 3. Giữ tiến trình chạy mãi mãi cho đến khi bị tắt
