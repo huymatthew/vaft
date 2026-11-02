@@ -42,8 +42,33 @@ public interface RaftLogManager extends RaftLogView {
     void appendEntriesFromLeader(int prevLogIndex, List<LogEntry> newEntries);
 
     /**
+     * (Dùng trên Follower khi nhận AppendEntries hợp lệ)
+     * Overload có thêm tham số commitIndex để bảo vệ an toàn:
+     * Tuyệt đối không bao giờ truncate các entry đã commit (targetIndex <= commitIndex).
+     */
+    default void appendEntriesFromLeader(int prevLogIndex, List<LogEntry> newEntries, int commitIndex) {
+        appendEntriesFromLeader(prevLogIndex, newEntries);
+    }
+
+    /**
      * Hỗ trợ tối ưu Fast Backup khi matchLog(prevLogIndex, prevLogTerm) trả về false:
-     * Tìm chỉ số đầu tiên trong log có cùng term với entry bị xung đột tại prevLogIndex.
+     * (Dùng trên Follower) Tìm chỉ số ĐẦU TIÊN trong log có cùng term với entry bị xung đột tại prevLogIndex.
      */
     int findFirstIndexOfTerm(int conflictTerm, int maxSearchIndex);
+
+    /**
+     * Hỗ trợ tối ưu Fast Backup khi nhận AppendEntriesResponse bị reject (conflictTerm > 0):
+     * (Dùng trên Leader) Tìm chỉ số CUỐI CÙNG trong log của Leader có cùng conflictTerm
+     * để Leader có thể nhảy tới nextIndex = lastIndexOfTerm + 1.
+     * Trả về -1 nếu Leader không chứa entry nào thuộc conflictTerm.
+     */
+    default int findLastIndexOfTerm(int conflictTerm, int maxSearchIndex) {
+        return -1;
+    }
+
+    /**
+     * Khôi phục trạng thái log từ danh sách log lưu trữ bền vững (Persistence Storage).
+     */
+    default void restoreEntries(List<LogEntry> recoveredEntries) {
+    }
 }

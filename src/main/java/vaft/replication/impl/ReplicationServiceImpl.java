@@ -146,7 +146,7 @@ public class ReplicationServiceImpl implements ReplicationService {
                 } else {
                     int nextIdx;
                     if (res.getConflictTerm() > 0) {
-                        int lastIdxOfConflictTerm = logManager.findFirstIndexOfTerm(res.getConflictTerm(), requestHolder[0].getPrevLogIndex());
+                        int lastIdxOfConflictTerm = logManager.findLastIndexOfTerm(res.getConflictTerm(), requestHolder[0].getPrevLogIndex());
                         if (lastIdxOfConflictTerm > 0) {
                             nextIdx = lastIdxOfConflictTerm + 1;
                         } else {
@@ -188,19 +188,17 @@ public class ReplicationServiceImpl implements ReplicationService {
                 int conflictIndex = logManager.getLastLogIndex() + 1;
                 int conflictTerm = 0;
                 
-                if (req.getPrevLogIndex() <= logManager.getLastLogIndex()) {
+                if (req.getPrevLogIndex() <= logManager.getLastLogIndex() && req.getPrevLogIndex() > 0) {
                     conflictTerm = logManager.getTermAt(req.getPrevLogIndex());
-                    conflictIndex = req.getPrevLogIndex();
-                    while (conflictIndex > 1 && logManager.getTermAt(conflictIndex - 1) == conflictTerm) {
-                        conflictIndex--;
-                    }
+                    int firstIdx = logManager.findFirstIndexOfTerm(conflictTerm, req.getPrevLogIndex());
+                    conflictIndex = firstIdx > 0 ? firstIdx : req.getPrevLogIndex();
                 }
                 responseHolder[0] = AppendEntriesResponse.fail(currentTerm, conflictIndex, conflictTerm);
                 return;
             }
 
-            // Dùng getEntries() thay vì entries()
-            logManager.appendEntriesFromLeader(req.getPrevLogIndex(), req.getEntries());
+            // Dùng getEntries() thay vì entries(), truyền commitIndex để bảo vệ log đã commit không bị truncate
+            logManager.appendEntriesFromLeader(req.getPrevLogIndex(), req.getEntries(), raftState.getCommitIndex());
 
             if (req.getLeaderCommit() > raftState.getCommitIndex()) {
                 raftState.setCommitIndex(Math.min(req.getLeaderCommit(), logManager.getLastLogIndex()));
