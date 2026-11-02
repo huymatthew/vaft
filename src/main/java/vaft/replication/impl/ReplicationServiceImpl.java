@@ -3,6 +3,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -18,13 +19,13 @@ import vaft.protocol.LogEntry;
 import vaft.replication.RaftLogManager;
 import vaft.replication.ReplicationService;
 import vaft.state.StateMachine;
-import vaft.transport.impl.TcpRaftTransport;
+import vaft.transport.RaftTransport;
 
 public class ReplicationServiceImpl implements ReplicationService {
     private final RaftState raftState;
     private final RaftLogManager logManager;
     private final ClusterConfig clusterConfig;
-    private final TcpRaftTransport transport;
+    private final RaftTransport transport;
     private final ExecutorService rpcExecutor;
     private final Runnable heartbeatTimerStart;
     private final Runnable heartbeatTimerStop;
@@ -32,12 +33,14 @@ public class ReplicationServiceImpl implements ReplicationService {
     private final StateMachine stateMachine;
 
     private final Map<Integer, CompletableFuture<ClientCommandResult>> clientFutures;
+    // Chống bão task: Mỗi peer chỉ có tối đa 1 replication task in-flight tại một thời điểm
+    private final Set<Integer> inflightReplications = ConcurrentHashMap.newKeySet();
 
     public ReplicationServiceImpl(
             RaftState raftState, 
-            RaftLogManager logManager,
+            RaftLogManager logManager, 
             ClusterConfig clusterConfig, 
-            TcpRaftTransport transport,
+            RaftTransport transport,
             ExecutorService rpcExecutor, 
             StateMachine stateMachine,
             Runnable heartbeatTimerStart, 
@@ -68,13 +71,18 @@ public class ReplicationServiceImpl implements ReplicationService {
             }
         });
 
-        heartbeatTimerStart.run();
+        if (heartbeatTimerStart != null) {
+            heartbeatTimerStart.run();
+        }
         onHeartbeatTick();
     }
 
     @Override
     public void onStepDown() {
-        heartbeatTimerStop.run();
+        if (heartbeatTimerStop != null) {
+            heartbeatTimerStop.run();
+        }
+        inflightReplications.clear();
         
         raftState.withLock(() -> {
             for (Map.Entry<Integer, CompletableFuture<ClientCommandResult>> entry : clientFutures.entrySet()) {
@@ -97,68 +105,106 @@ public class ReplicationServiceImpl implements ReplicationService {
     }
 
     private void replicateToPeer(int peerId) {
+        // Chống bão task: Mỗi peer chỉ có tối đa 1 replication task đang chạy
+        if (!inflightReplications.add(peerId)) {
+            return;
+        }
+
         rpcExecutor.submit(() -> {
-            final AppendEntriesRequest[] requestHolder = new AppendEntriesRequest[1];
-            final int[] termHolder = new int[1];
+            try {
+                // Vòng lặp đồng bộ tuần tự thay cho đệ quy: tránh cạn kiệt thread pool và tràn bộ nhớ
+                while (true) {
+                    final AppendEntriesRequest[] requestHolder = new AppendEntriesRequest[1];
+                    final int[] termHolder = new int[1];
 
-            // BƯỚC 1: Dùng withLock thay vì acquireLock
-            raftState.withLock(() -> {
-                if (raftState.getRole() != NodeRole.LEADER) return;
+                    boolean canReplicate = raftState.withLock(() -> {
+                        if (raftState.getRole() != NodeRole.LEADER) return false;
 
-                termHolder[0] = raftState.getCurrentTerm();
-                int nextIdx = raftState.getNextIndex().getOrDefault(peerId, 1);
-                int prevLogIndex = nextIdx - 1;
-                int prevLogTerm = logManager.getTermAt(prevLogIndex);
-                List<LogEntry> entries = logManager.getEntriesFrom(nextIdx);
+                        termHolder[0] = raftState.getCurrentTerm();
+                        int nextIdx = raftState.getNextIndex().getOrDefault(peerId, 1);
+                        int prevLogIndex = nextIdx - 1;
+                        int prevLogTerm = logManager.getTermAt(prevLogIndex);
+                        List<LogEntry> entries = logManager.getEntriesFrom(nextIdx);
 
-                // Dùng .getId() thay vì .nodeId()
-                requestHolder[0] = new AppendEntriesRequest(
-                        termHolder[0], clusterConfig.getSelf().getId(),
-                        prevLogIndex, prevLogTerm, entries, raftState.getCommitIndex()
-                );
-            });
+                        requestHolder[0] = new AppendEntriesRequest(
+                                termHolder[0], clusterConfig.getSelf().getId(),
+                                prevLogIndex, prevLogTerm, entries, raftState.getCommitIndex()
+                        );
+                        return true;
+                    });
 
-            if (requestHolder[0] == null) return;
-
-            AppendEntriesResponse res = transport.sendAppendEntries(peerId, requestHolder[0]);
-            if (res == null) return; 
-
-            // BƯỚC 3: Dùng withLock để cập nhật trạng thái
-            raftState.withLock(() -> {
-                // Sửa thành res.getTerm() thay vì res.term()
-                if (raftState.checkTermAndStepDown(res.getTerm())) {
-                    onStepDown();
-                    return;
-                }
-
-                if (raftState.getRole() != NodeRole.LEADER || raftState.getCurrentTerm() != termHolder[0]) {
-                    return;
-                }
-
-                // Sửa thành isSuccess(), getMatchIndex(), getConflictTerm()...
-                if (res.isSuccess()) {
-                    int currentMatch = raftState.getMatchIndex().getOrDefault(peerId, 0);
-                    if (res.getMatchIndex() > currentMatch) {
-                        raftState.getMatchIndex().put(peerId, res.getMatchIndex());
-                        raftState.getNextIndex().put(peerId, res.getMatchIndex() + 1);
-                        advanceCommitIndexIfPossible(); 
+                    if (!canReplicate || requestHolder[0] == null) {
+                        break;
                     }
-                } else {
-                    int nextIdx;
-                    if (res.getConflictTerm() > 0) {
-                        int lastIdxOfConflictTerm = logManager.findLastIndexOfTerm(res.getConflictTerm(), requestHolder[0].getPrevLogIndex());
-                        if (lastIdxOfConflictTerm > 0) {
-                            nextIdx = lastIdxOfConflictTerm + 1;
-                        } else {
-                            nextIdx = res.getConflictIndex();
+
+                    // Gửi RPC mạng ngoài lock
+                    AppendEntriesResponse res;
+                    try {
+                        res = transport.sendAppendEntries(peerId, requestHolder[0]);
+                    } catch (Exception e) {
+                        // Lỗi kết nối hoặc đứt mạng: Dừng lại, đợi nhịp heartbeat tiếp theo thử lại
+                        break;
+                    }
+                    if (res == null) {
+                        // Lỗi kết nối hoặc timeout: Dừng lại, đợi nhịp heartbeat tiếp theo thử lại
+                        break;
+                    }
+
+                    boolean shouldContinue = raftState.withLock(() -> {
+                        if (raftState.checkTermAndStepDown(res.getTerm())) {
+                            onStepDown();
+                            return false;
                         }
-                    } else {
-                        nextIdx = res.getConflictIndex();
+
+                        if (raftState.getRole() != NodeRole.LEADER || raftState.getCurrentTerm() != termHolder[0]) {
+                            return false;
+                        }
+
+                        if (res.isSuccess()) {
+                            int currentMatch = raftState.getMatchIndex().getOrDefault(peerId, 0);
+                            if (res.getMatchIndex() > currentMatch) {
+                                raftState.getMatchIndex().put(peerId, res.getMatchIndex());
+                                raftState.getNextIndex().put(peerId, res.getMatchIndex() + 1);
+                                advanceCommitIndexIfPossible();
+
+                                // Nếu Follower vẫn còn thiếu log mới so với Leader, tiếp tục vòng lặp gửi tiếp ngay
+                                int nextIdx = raftState.getNextIndex().getOrDefault(peerId, 1);
+                                return nextIdx <= logManager.getLastLogIndex();
+                            }
+                            // Nếu matchIndex không tăng (stale response): không lặp lại
+                            return false;
+                        } else {
+                            // Xử lý xung đột log: lùi nextIndex an toàn (chống stale response)
+                            int currentNext = raftState.getNextIndex().getOrDefault(peerId, 1);
+                            if (requestHolder[0].getPrevLogIndex() == currentNext - 1) {
+                                int nextIdx;
+                                if (res.getConflictTerm() > 0) {
+                                    int lastIdxOfConflictTerm = logManager.findLastIndexOfTerm(res.getConflictTerm(), requestHolder[0].getPrevLogIndex());
+                                    if (lastIdxOfConflictTerm > 0) {
+                                        nextIdx = lastIdxOfConflictTerm + 1;
+                                    } else {
+                                        nextIdx = res.getConflictIndex();
+                                    }
+                                } else {
+                                    nextIdx = res.getConflictIndex();
+                                }
+
+                                // Đảm bảo nextIndex luôn giảm ít nhất 1 đơn vị và >= 1
+                                int updatedNext = Math.max(1, Math.min(currentNext - 1, nextIdx));
+                                raftState.getNextIndex().put(peerId, updatedNext);
+                                return true; // Tiếp tục vòng lặp để gửi lại với nextIndex đã lùi
+                            }
+                            return false;
+                        }
+                    });
+
+                    if (!shouldContinue) {
+                        break;
                     }
-                    raftState.getNextIndex().put(peerId, Math.max(1, nextIdx));
-                    replicateToPeer(peerId); 
                 }
-            });
+            } finally {
+                inflightReplications.remove(peerId);
+            }
         });
     }
 
@@ -177,11 +223,24 @@ public class ReplicationServiceImpl implements ReplicationService {
                 return;
             }
 
-            if (req.getTerm() > currentTerm || raftState.getRole() != NodeRole.FOLLOWER) {
+            if (req.getTerm() > currentTerm) {
                 raftState.checkTermAndStepDown(req.getTerm());
+                currentTerm = raftState.getCurrentTerm();
             }
+
+            // Theo Raft §5.2: Nếu Candidate hoặc Leader nhận AppendEntries hợp lệ (term >= currentTerm)
+            // thì bắt buộc phải chuyển vai trò về FOLLOWER
+            if (raftState.getRole() != NodeRole.FOLLOWER) {
+                if (raftState.getRole() == NodeRole.LEADER) {
+                    onStepDown();
+                }
+                raftState.setRole(NodeRole.FOLLOWER);
+            }
+
             raftState.setLeaderId(req.getLeaderId());
-            electionTimerReset.run(); 
+            if (electionTimerReset != null) {
+                electionTimerReset.run();
+            } 
 
             // Dùng getPrevLogIndex() và getPrevLogTerm()
             if (!logManager.matchLog(req.getPrevLogIndex(), req.getPrevLogTerm())) {
@@ -200,12 +259,20 @@ public class ReplicationServiceImpl implements ReplicationService {
             // Dùng getEntries() thay vì entries(), truyền commitIndex để bảo vệ log đã commit không bị truncate
             logManager.appendEntriesFromLeader(req.getPrevLogIndex(), req.getEntries(), raftState.getCommitIndex());
 
+            // Chỉ số của entry mới cuối cùng được xác thực khớp trong bản tin này
+            int lastNewEntryIndex = req.getPrevLogIndex() + (req.getEntries() != null ? req.getEntries().size() : 0);
+
+            // Raft Rule (Figure 2): If leaderCommit > commitIndex, set commitIndex = min(leaderCommit, index of last new entry)
             if (req.getLeaderCommit() > raftState.getCommitIndex()) {
-                raftState.setCommitIndex(Math.min(req.getLeaderCommit(), logManager.getLastLogIndex()));
-                applyCommittedEntries();
+                int newCommitIndex = Math.min(req.getLeaderCommit(), lastNewEntryIndex);
+                // Đảm bảo commitIndex chỉ tăng đơn điệu, không bao giờ bị lùi
+                if (newCommitIndex > raftState.getCommitIndex()) {
+                    raftState.setCommitIndex(newCommitIndex);
+                    applyCommittedEntries();
+                }
             }
 
-            responseHolder[0] = AppendEntriesResponse.ok(currentTerm, logManager.getLastLogIndex());
+            responseHolder[0] = AppendEntriesResponse.ok(currentTerm, lastNewEntryIndex);
         });
 
         return responseHolder[0];
@@ -227,6 +294,9 @@ public class ReplicationServiceImpl implements ReplicationService {
             LogEntry newEntry = logManager.appendCommand(raftState.getCurrentTerm(), command);
             clientFutures.put(newEntry.index(), future);
             
+            // Tự động kiểm tra commit ngay (đặc biệt cần thiết cho cụm 1 node có quorum = 1)
+            advanceCommitIndexIfPossible();
+
             onHeartbeatTick(); 
         });
         
@@ -235,12 +305,35 @@ public class ReplicationServiceImpl implements ReplicationService {
 
     @Override
     public void advanceCommitIndexIfPossible() {
-        List<Integer> matchIndexes = new ArrayList<>(raftState.getMatchIndex().values());
-        matchIndexes.add(logManager.getLastLogIndex()); 
-        
+        int quorumSize = clusterConfig.getQuorumSize();
+        if (quorumSize <= 0) {
+            return;
+        }
+
+        List<Integer> matchIndexes = new ArrayList<>();
+        // 1. Thêm matchIndex của Leader (chính là lastLogIndex)
+        matchIndexes.add(logManager.getLastLogIndex());
+
+        // 2. Thêm matchIndex của các peer (mặc định 0 nếu peer chưa kết nối hoặc chưa phản hồi)
+        int selfId = clusterConfig.getSelf() != null ? clusterConfig.getSelf().getId() : -1;
+        if (clusterConfig.getNodes() != null) {
+            for (NodeInfo node : clusterConfig.getNodes()) {
+                if (node.getId() != selfId) {
+                    matchIndexes.add(raftState.getMatchIndex().getOrDefault(node.getId(), 0));
+                }
+            }
+        } else {
+            matchIndexes.addAll(raftState.getMatchIndex().values());
+        }
+
+        // 3. Phòng thủ: Nếu số lượng node trong cluster nhỏ hơn Quorum thì không thể đạt đa số
+        if (matchIndexes.size() < quorumSize) {
+            return;
+        }
+
         matchIndexes.sort(Collections.reverseOrder());
-        
-        int majorityIndex = matchIndexes.get(clusterConfig.getQuorumSize() - 1);
+
+        int majorityIndex = matchIndexes.get(quorumSize - 1);
 
         if (majorityIndex > raftState.getCommitIndex() && logManager.getTermAt(majorityIndex) == raftState.getCurrentTerm()) {
             raftState.setCommitIndex(majorityIndex);
@@ -254,19 +347,31 @@ public class ReplicationServiceImpl implements ReplicationService {
             int applyIdx = raftState.getLastApplied() + 1;
             LogEntry entry = logManager.getEntry(applyIdx);
             
-            // Gọi getCommand() thay vì command()
-            if (entry.command() != null) {
-                stateMachine.apply(entry.command());
+            Throwable applyError = null;
+            if (entry != null && entry.command() != null) {
+                try {
+                    stateMachine.apply(entry.command());
+                } catch (Throwable t) {
+                    applyError = t;
+                    System.err.println("Lỗi thực thi lệnh tại State Machine (index " + applyIdx + "): " + t.getMessage());
+                }
             }
             
+            // Bắt buộc luôn tăng lastApplied để tránh kẹt vĩnh viễn luồng commit của Raft
             raftState.setLastApplied(applyIdx);
 
             CompletableFuture<ClientCommandResult> future = clientFutures.remove(applyIdx);
             if (future != null) {
-                // Gọi getTerm() thay vì term()
-                future.complete(new ClientCommandResult(
-                        true, "COMMITTED", raftState.getLeaderId(), applyIdx, entry.term(), null
-                ));
+                int term = (entry != null) ? entry.term() : -1;
+                if (applyError == null) {
+                    future.complete(new ClientCommandResult(
+                            true, "COMMITTED", raftState.getLeaderId(), applyIdx, term, null
+                    ));
+                } else {
+                    future.complete(new ClientCommandResult(
+                            false, "EXECUTION_ERROR: " + applyError.getMessage(), raftState.getLeaderId(), applyIdx, term, null
+                    ));
+                }
             }
         }
     }
