@@ -9,6 +9,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 import vaft.config.ClusterConfig;
 import vaft.config.NodeInfo;
@@ -81,7 +82,14 @@ public class ReplicationServiceImpl implements ReplicationService {
         if (heartbeatTimerStart != null) {
             heartbeatTimerStart.run();
         }
-        onHeartbeatTick();
+        if (heartbeatTask == null || heartbeatTask.isCancelled()) {
+            heartbeatTask = scheduler.scheduleAtFixedRate(
+                    this::onHeartbeatTick,
+                    0,
+                    clusterConfig.getElectionConfig().getHeartbeatIntervalMs(),
+                    TimeUnit.MILLISECONDS
+            );
+        }
     }
 
     @Override
