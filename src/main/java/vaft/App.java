@@ -66,7 +66,15 @@ public class App {
                 () -> {},
                 () -> electionServiceHolder.get().resetElectionTimer());
         
-        ElectionService electionService = new ElectionServiceImpl(raftState, logManager, config, transport, rpcExecutor, scheduler, replicationService);
+        ElectionService electionService = new ElectionServiceImpl(
+                raftState,
+                logManager,
+                config,
+                transport,
+                rpcExecutor,
+                scheduler,
+                replicationService,
+                partitionTable);
         electionServiceHolder.set(electionService);
 
 

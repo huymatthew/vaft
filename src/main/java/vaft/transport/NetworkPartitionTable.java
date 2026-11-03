@@ -11,5 +11,8 @@ public class NetworkPartitionTable {
     public boolean isBlocked(int from, int to) {
         return blockedLinks.contains(from + "->" + to) || blockedLinks.contains(from + "->*") || blockedLinks.contains("*->" + to);
     }
+    public boolean isIsolated(int nodeId) {
+        return blockedLinks.contains(nodeId + "->*") || blockedLinks.contains("*->" + nodeId);
+    }
 }
     

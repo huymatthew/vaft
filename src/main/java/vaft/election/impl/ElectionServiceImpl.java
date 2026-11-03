@@ -16,6 +16,7 @@ import vaft.protocol.RequestVoteRequest;
 import vaft.protocol.RequestVoteResponse;
 import vaft.replication.RaftLogView;
 import vaft.replication.ReplicationService;
+import vaft.transport.NetworkPartitionTable;
 import vaft.transport.RaftTransport;
 
 public class ElectionServiceImpl implements ElectionService {
@@ -27,6 +28,7 @@ public class ElectionServiceImpl implements ElectionService {
     private final ExecutorService rpcExecutor;
     private final ResettableTimer electionTimer;
     private final ReplicationService replicationService;
+    private final NetworkPartitionTable partitionTable;
 
     public ElectionServiceImpl(
         RaftState raftState,
@@ -36,6 +38,18 @@ public class ElectionServiceImpl implements ElectionService {
         ExecutorService rpcExecutor,
         ScheduledExecutorService scheduler,
         ReplicationService replicationService) {
+        this(raftState, logView, clusterConfig, transport, rpcExecutor, scheduler, replicationService, null);
+    }
+
+    public ElectionServiceImpl(
+        RaftState raftState,
+        RaftLogView logView,
+        ClusterConfig clusterConfig,
+        RaftTransport transport,
+        ExecutorService rpcExecutor,
+        ScheduledExecutorService scheduler,
+        ReplicationService replicationService,
+        NetworkPartitionTable partitionTable) {
 
         this.raftState = raftState;
         this.logView = logView;
@@ -43,6 +57,7 @@ public class ElectionServiceImpl implements ElectionService {
         this.transport = transport;
         this.rpcExecutor = rpcExecutor;
         this.replicationService = replicationService;
+        this.partitionTable = partitionTable;
 
         ElectionConfig electionConfig = clusterConfig.getElectionConfig();
 
@@ -94,6 +109,14 @@ public class ElectionServiceImpl implements ElectionService {
 
     @Override
     public void onElectionTimeout() {
+        int selfId = clusterConfig.getSelf().getId();
+
+        // Chặn tăng Term (Term Inflation) khi node đang bị cô lập mạng (Network Isolated)
+        if (partitionTable != null && partitionTable.isBlocked(selfId, -1)) {
+            electionTimer.reset();
+            return;
+        }
+
         final RequestVoteRequest[] requestHolder = new RequestVoteRequest[1];
         final int[] termHolder = new int[1];
 
@@ -109,7 +132,6 @@ public class ElectionServiceImpl implements ElectionService {
             raftState.setCurrentTerm(newTerm);
             termHolder[0] = newTerm;
 
-            int selfId = clusterConfig.getSelf().getId();
             raftState.setVotedFor(selfId);
             electionTimer.reset();
 
@@ -124,7 +146,6 @@ public class ElectionServiceImpl implements ElectionService {
             return;
         }
 
-        int selfId = clusterConfig.getSelf().getId();
         int quorumSize = clusterConfig.getQuorumSize();
         int electionTerm = termHolder[0];
 
