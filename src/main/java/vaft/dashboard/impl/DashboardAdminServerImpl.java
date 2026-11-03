@@ -1,21 +1,22 @@
 package vaft.dashboard.impl;
 
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpHandler;
-import com.sun.net.httpserver.HttpServer;
-import vaft.core.RaftState;
-import vaft.replication.RaftLogManager;
-import vaft.replication.ReplicationService;
-import vaft.state.StateMachine;
-import vaft.transport.NetworkPartitionTable;
-
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.Executors;
 
-import vaft.dashboard.*;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
+
+import vaft.core.RaftState;
+import vaft.dashboard.DashboardAdminServer;
+import vaft.dashboard.JsonPacker;
+import vaft.dashboard.NodeStatusSnapshot;
+import vaft.replication.RaftLogManager;
+import vaft.replication.ReplicationService;
+import vaft.state.StateMachine;
+import vaft.transport.NetworkPartitionTable;
 public class DashboardAdminServerImpl implements DashboardAdminServer {
 
     private final int port;
@@ -123,8 +124,12 @@ public class DashboardAdminServerImpl implements DashboardAdminServer {
             sendResponse(exchange, 405, "Method Not Allowed");
             return;
         }
+        if (partitionTable != null && partitionTable.isBlocked(selfId, -1)) {
+            sendJsonResponse(exchange, 503, "{\"error\": \"Node is isolated and cannot process client commands.\"}");
+            return;
+        }
         String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-        
+
         replicationService.submitClientCommand(body)
                 .thenAccept(result -> {
                     try {
