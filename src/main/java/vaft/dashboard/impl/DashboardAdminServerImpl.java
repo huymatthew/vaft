@@ -3,6 +3,7 @@ package vaft.dashboard.impl;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.Executors;
 
@@ -120,7 +121,8 @@ public class DashboardAdminServerImpl implements DashboardAdminServer {
     }
 
     private void handleClientCommand(HttpExchange exchange) throws IOException {
-        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+        String method = exchange.getRequestMethod();
+        if (!"POST".equalsIgnoreCase(method) && !"GET".equalsIgnoreCase(method)) {
             sendResponse(exchange, 405, "Method Not Allowed");
             return;
         }
@@ -128,9 +130,28 @@ public class DashboardAdminServerImpl implements DashboardAdminServer {
             sendJsonResponse(exchange, 503, "{\"error\": \"Node is isolated and cannot process client commands.\"}");
             return;
         }
-        String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
 
-        replicationService.submitClientCommand(body)
+        String command;
+        if ("POST".equalsIgnoreCase(method)) {
+            command = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8).trim();
+        } else {
+            // Hỗ trợ HTTP GET cho Read Path nhanh: GET /api/command?cmd=GET+user:1 hoặc GET /api/command?key=user:1
+            String query = exchange.getRequestURI().getRawQuery();
+            if (query != null && query.startsWith("cmd=")) {
+                command = URLDecoder.decode(query.substring(4), StandardCharsets.UTF_8).trim();
+            } else if (query != null && query.startsWith("key=")) {
+                command = "GET " + URLDecoder.decode(query.substring(4), StandardCharsets.UTF_8).trim();
+            } else {
+                command = "KEYS";
+            }
+        }
+
+        if (command.isEmpty()) {
+            sendJsonResponse(exchange, 400, "{\"error\": \"Command must not be empty\"}");
+            return;
+        }
+
+        replicationService.submitClientCommand(command)
                 .thenAccept(result -> {
                     try {
                         System.out.println("Client command result: " + result);
