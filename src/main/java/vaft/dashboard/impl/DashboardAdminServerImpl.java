@@ -18,6 +18,7 @@ import vaft.replication.RaftLogManager;
 import vaft.replication.ReplicationService;
 import vaft.state.StateMachine;
 import vaft.transport.NetworkPartitionTable;
+
 public class DashboardAdminServerImpl implements DashboardAdminServer {
 
     private final int port;
@@ -135,7 +136,8 @@ public class DashboardAdminServerImpl implements DashboardAdminServer {
         if ("POST".equalsIgnoreCase(method)) {
             command = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8).trim();
         } else {
-            // Hỗ trợ HTTP GET cho Read Path nhanh: GET /api/command?cmd=GET+user:1 hoặc GET /api/command?key=user:1
+            // Hỗ trợ HTTP GET cho Read Path nhanh: GET /api/command?cmd=GET+user:1 hoặc GET
+            // /api/command?key=user:1
             String query = exchange.getRequestURI().getRawQuery();
             if (query != null && query.startsWith("cmd=")) {
                 command = URLDecoder.decode(query.substring(4), StandardCharsets.UTF_8).trim();
@@ -156,13 +158,15 @@ public class DashboardAdminServerImpl implements DashboardAdminServer {
                     try {
                         System.out.println("Client command result: " + result);
                         sendJsonResponse(exchange, result.accepted() ? 200 : 400, JsonPacker.toJson(result));
-                    } catch (IOException ignored) {}
+                    } catch (IOException ignored) {
+                    }
                 });
     }
 
     private void sendJsonResponse(HttpExchange exchange, int statusCode, String json) throws IOException {
         exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
-        // Hỗ trợ CORS nếu giao diện UI chạy trên Vite/React cổng khác (e.g., 3000, 5173)
+        // Hỗ trợ CORS nếu giao diện UI chạy trên Vite/React cổng khác (e.g., 3000,
+        // 5173)
         exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
         exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
         sendResponse(exchange, statusCode, json);

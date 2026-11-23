@@ -2,7 +2,10 @@ package vaft.replication.impl;
 
 import vaft.protocol.LogEntry;
 import vaft.replication.RaftLogManager;
+import vaft.storage.PersistenceStorage;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -10,23 +13,27 @@ import java.util.List;
 public class RaftLogManagerImpl implements RaftLogManager {
 
     private final List<LogEntry> log;
-
-    // Callback để tự động gọi PersistenceStorage.saveState() khi log thay đổi
+    private final PersistenceStorage persistenceStorage;
     private final Runnable saveStateCallback;
 
-    public RaftLogManagerImpl(Runnable saveStateCallback) {
-        this(Collections.emptyList(), saveStateCallback);
+    public RaftLogManagerImpl() {
+        this((PersistenceStorage) null);
     }
 
-    /**
-     * Khởi tạo RaftLogManager với dữ liệu log đã được nạp từ PersistenceStorage khi
-     * Node khởi động lại.
-     */
-    public RaftLogManagerImpl(List<LogEntry> initialLog, Runnable saveStateCallback) {
+    public RaftLogManagerImpl(Runnable saveStateCallback) {
         this.log = new ArrayList<>();
+        this.persistenceStorage = null;
         this.saveStateCallback = saveStateCallback != null ? saveStateCallback : () -> {
         };
-        restoreEntries(initialLog);
+        restoreEntries(Collections.emptyList());
+    }
+
+    public RaftLogManagerImpl(PersistenceStorage persistenceStorage) {
+        this.log = new ArrayList<>();
+        this.persistenceStorage = persistenceStorage;
+        this.saveStateCallback = () -> {
+        };
+        restoreEntries(Collections.emptyList());
     }
 
     /**
@@ -116,7 +123,7 @@ public class RaftLogManagerImpl implements RaftLogManager {
         LogEntry newEntry = new LogEntry(nextIndex, currentTerm, command);
         log.add(newEntry);
 
-        // Bắt buộc gọi lưu xuống đĩa ngay sau khi append
+        persistAppend(List.of(newEntry));
         saveStateCallback.run();
 
         return newEntry;
@@ -177,17 +184,12 @@ public class RaftLogManagerImpl implements RaftLogManager {
 
             // BẢO VỆ LOG ĐÃ COMMIT: Không bao giờ truncate entry có targetIndex <=
             // commitIndex
-            // Raft Invariant (Leader Completeness & State Machine Safety):
-            // Các entry đã commit là bất biến. Nếu có xung đột ở targetIndex <=
-            // commitIndex, từ chối truncate!
             if (targetIndex <= commitIndex) {
                 if (getTermAt(targetIndex) != entry.term()) {
                     // Phát hiện xung đột với entry đã commit: Tuyệt đối không truncate, dừng xử lý
                     // ngay
                     return;
                 }
-                // Nếu term giống nhau: Entry đã commit và trùng khớp, an toàn bỏ qua để duyệt
-                // tiếp
                 continue;
             }
 
@@ -196,27 +198,48 @@ public class RaftLogManagerImpl implements RaftLogManager {
                 if (getTermAt(targetIndex) != entry.term()) {
                     // PHÁT HIỆN XUNG ĐỘT TRÊN LOG CHƯA COMMIT:
                     // Cắt bỏ (truncate) từ targetIndex đến hết log hiện tại
-                    // targetIndex > commitIndex >= 0 đảm bảo không bao giờ xóa nhầm Sentinel Entry
-                    // hoặc entry đã commit
                     log.subList(targetIndex, log.size()).clear();
+                    persistTruncate(targetIndex);
 
                     // Nối toàn bộ log từ leader kể từ điểm xung đột
-                    log.addAll(newEntries.subList(i, newEntries.size()));
+                    List<LogEntry> toAppend = List.copyOf(newEntries.subList(i, newEntries.size()));
+                    log.addAll(toAppend);
+                    persistAppend(toAppend);
                     modified = true;
                     break;
                 }
-                // Nếu term giống nhau -> Bỏ qua (coi như đã có sẵn, không làm gì cả).
-                // Điều này cực kỳ quan trọng để xử lý lỗi gói tin TCP bị gửi lặp/đến trễ.
             } else {
                 // Follower đã hết log cũ, chỉ việc nối thêm tất cả phần còn lại
-                log.addAll(newEntries.subList(i, newEntries.size()));
+                List<LogEntry> toAppend = List.copyOf(newEntries.subList(i, newEntries.size()));
+                log.addAll(toAppend);
+                persistAppend(toAppend);
                 modified = true;
                 break;
             }
         }
 
         if (modified) {
-            saveStateCallback.run(); // Chỉ ghi xuống đĩa khi thực sự có thay đổi
+            saveStateCallback.run();
+        }
+    }
+
+    private void persistAppend(List<LogEntry> entries) {
+        if (persistenceStorage != null && entries != null && !entries.isEmpty()) {
+            try {
+                persistenceStorage.appendEntries(entries);
+            } catch (IOException e) {
+                throw new UncheckedIOException("Failed to persist appended log entries", e);
+            }
+        }
+    }
+
+    private void persistTruncate(int fromIndex) {
+        if (persistenceStorage != null) {
+            try {
+                persistenceStorage.truncateFrom(fromIndex);
+            } catch (IOException e) {
+                throw new UncheckedIOException("Failed to persist log truncation from index " + fromIndex, e);
+            }
         }
     }
 
@@ -241,8 +264,6 @@ public class RaftLogManagerImpl implements RaftLogManager {
     @Override
     public synchronized int findLastIndexOfTerm(int conflictTerm, int maxSearchIndex) {
         int searchLimit = Math.min(maxSearchIndex, getLastLogIndex());
-        // Quét ngược từ maxSearchIndex về 1; entry đầu tiên khớp chính là index lớn
-        // nhất (cuối cùng) của term đó
         for (int i = searchLimit; i > 0; i--) {
             if (getTermAt(i) == conflictTerm) {
                 return i;

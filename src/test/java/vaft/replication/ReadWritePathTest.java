@@ -39,7 +39,8 @@ public class ReadWritePathTest {
         raftState.setRole(NodeRole.LEADER);
         raftState.setLeaderId(1);
 
-        logManager = new RaftLogManagerImpl(() -> {});
+        logManager = new RaftLogManagerImpl(() -> {
+        });
         stateMachine = new StateMachine();
 
         NodeInfo self = new NodeInfo(1, "localhost", 9001, 8081);
@@ -49,13 +50,18 @@ public class ReadWritePathTest {
 
         RaftTransport dummyTransport = new RaftTransport() {
             @Override
-            public void start() {}
+            public void start() {
+            }
+
             @Override
-            public void stop() {}
+            public void stop() {
+            }
+
             @Override
             public RequestVoteResponse sendRequestVote(int targetNodeId, RequestVoteRequest request) {
                 return null;
             }
+
             @Override
             public AppendEntriesResponse sendAppendEntries(int targetNodeId, AppendEntriesRequest request) {
                 return null;
@@ -72,10 +78,12 @@ public class ReadWritePathTest {
                 Executors.newFixedThreadPool(2),
                 scheduler,
                 stateMachine,
-                () -> {},
-                () -> {},
-                () -> {}
-        );
+                () -> {
+                },
+                () -> {
+                },
+                () -> {
+                });
     }
 
     @AfterEach

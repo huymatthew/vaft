@@ -1,5 +1,6 @@
 package vaft.replication.impl;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -26,6 +27,8 @@ import vaft.state.Command;
 import vaft.state.CommandResult;
 import vaft.state.CommandType;
 import vaft.state.StateMachine;
+import vaft.storage.PersistenceStorage;
+import vaft.storage.RaftSnapshot;
 import vaft.transport.RaftTransport;
 
 public class ReplicationServiceImpl implements ReplicationService {
@@ -441,6 +444,35 @@ public class ReplicationServiceImpl implements ReplicationService {
                             term, null));
                 }
             }
+
+            checkAndTakeSnapshotIfNeeded();
         }
+    }
+
+    private void checkAndTakeSnapshotIfNeeded() {
+        int threshold = (clusterConfig != null && clusterConfig.getSnapshotConfig() != null)
+                ? clusterConfig.getSnapshotConfig().getSnapshotThresholdEntries()
+                : 50;
+        if (threshold > 0 && (raftState.getLastApplied() - raftState.getLastSnapshotIndex()) >= threshold) {
+            takeSnapshot();
+        }
+    }
+
+    public void takeSnapshot() {
+        int snapIdx = raftState.getLastApplied();
+        if (snapIdx <= 0) {
+            return;
+        }
+        int snapTerm = Math.max(0, logManager.getTermAt(snapIdx));
+        PersistenceStorage storage = raftState.getPersistenceStorage();
+        if (storage != null) {
+            try {
+                storage.saveSnapshot(new RaftSnapshot(snapIdx, snapTerm, stateMachine.getSnapshotData()));
+            } catch (IOException e) {
+                System.err.println("Failed to save snapshot at index " + snapIdx + ": " + e.getMessage());
+                return;
+            }
+        }
+        raftState.setLastSnapshotIndex(snapIdx);
     }
 }
