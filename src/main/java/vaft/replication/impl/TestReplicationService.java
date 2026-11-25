@@ -30,8 +30,8 @@ public class TestReplicationService implements ReplicationService {
     private boolean ownsScheduler;
     private ScheduledFuture<?> heartbeatTask;
 
-
     private final Map<Integer, CompletableFuture<ClientCommandResult>> clientFutures;
+
     public TestReplicationService(
             RaftState raftState,
             RaftLogManager logManager,
@@ -47,8 +47,7 @@ public class TestReplicationService implements ReplicationService {
         this.scheduler = scheduler;
         this.ownsScheduler = false;
         this.electionTimerReset = electionTimerReset;
-        this.heartbeatIntervalMs =
-                clusterConfig.getElectionConfig().getHeartbeatIntervalMs();
+        this.heartbeatIntervalMs = clusterConfig.getElectionConfig().getHeartbeatIntervalMs();
         this.clientFutures = new ConcurrentHashMap<>();
     }
 
@@ -70,8 +69,7 @@ public class TestReplicationService implements ReplicationService {
                 clusterConfig,
                 transport,
                 Executors.newSingleThreadScheduledExecutor(),
-                electionTimerReset
-        );
+                electionTimerReset);
         this.ownsScheduler = true;
     }
 
@@ -92,10 +90,10 @@ public class TestReplicationService implements ReplicationService {
                 null,
                 Executors.newSingleThreadScheduledExecutor(),
                 () -> {
-                }
-        );
+                });
         this.ownsScheduler = true;
     }
+
     @Override
     public synchronized void onBecomeLeader() {
         initializeReplicationState();
@@ -106,8 +104,7 @@ public class TestReplicationService implements ReplicationService {
                     this::onHeartbeatTick,
                     0,
                     heartbeatIntervalMs,
-                    TimeUnit.MILLISECONDS
-            );
+                    TimeUnit.MILLISECONDS);
         }
     }
 
@@ -174,8 +171,7 @@ public class TestReplicationService implements ReplicationService {
                     raftState.getCommitIndex());
         });
 
-        AppendEntriesResponse response =
-                transport.sendAppendEntries(peerId, requestHolder[0]);
+        AppendEntriesResponse response = transport.sendAppendEntries(peerId, requestHolder[0]);
         if (response != null && response.getTerm() > raftState.getCurrentTerm()) {
             raftState.withLock(() -> raftState.checkTermAndStepDown(response.getTerm()));
             onStepDown();

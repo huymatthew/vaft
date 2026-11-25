@@ -1,23 +1,66 @@
 package vaft.core;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
 
 import vaft.protocol.LogEntry;
+import vaft.storage.PersistenceStorage;
 
 public class RaftState {
-    private int currentTerm; //Term hiện tại của Node, được tăng lên khi Node trở thành Candidate hoặc nhận được Term mới từ Leader khác.
-    private int votedFor; //ID của Node mà Node này đã bỏ phiếu trong Term hiện tại. Nếu chưa bỏ phiếu, giá trị này là -1.
-    private NodeRole role = NodeRole.FOLLOWER; // Vai trò hiện tại của Node: FOLLOWER, CANDIDATE, hoặc LEADER.
-    private int leaderId; //ID của Node mà Node này nhận diện là Leader hiện tại. Nếu chưa biết, giá trị này là null.
-    private int commitIndex; // Chỉ số của log entry đã được commit (được áp dụng cho state machine). Node sẽ áp dụng các log entry từ lastApplied + 1 đến commitIndex.
-    private int lastApplied; // Chỉ số của log entry đã được áp dụng cho state machine.
+    private int currentTerm = 0; // Term hiện tại của Node
+    private int votedFor = -1;   // ID của Node mà Node này đã bỏ phiếu trong Term hiện tại (-1 nếu chưa bầu)
+    private NodeRole role = NodeRole.FOLLOWER;
+    private int leaderId = -1;
+    private int commitIndex = 0;
+    private int lastApplied = 0;
+    private int lastSnapshotIndex = 0;
     private final Map<Integer, Integer> nextIndex = new HashMap<>();
     private final Map<Integer, Integer> matchIndex = new HashMap<>();
-    private final List<LogEntry> log = new java.util.ArrayList<>();// Danh sách log entries, mỗi entry chứa thông tin về command và term. Chỉ số của log entry bắt đầu từ 1 (index 0 là giả định).
-    private final ReentrantLock lock = new ReentrantLock();//
+    private final List<LogEntry> log = new java.util.ArrayList<>();
+    private final ReentrantLock lock = new ReentrantLock();
+    private PersistenceStorage persistenceStorage;
+
+    public RaftState() {
+    }
+
+    public RaftState(PersistenceStorage persistenceStorage) {
+        this.persistenceStorage = persistenceStorage;
+    }
+
+    public void setPersistenceStorage(PersistenceStorage persistenceStorage) {
+        this.persistenceStorage = persistenceStorage;
+    }
+
+    public PersistenceStorage getPersistenceStorage() {
+        return persistenceStorage;
+    }
+
+    public int getLastSnapshotIndex() {
+        return lastSnapshotIndex;
+    }
+
+    public void setLastSnapshotIndex(int lastSnapshotIndex) {
+        this.lastSnapshotIndex = lastSnapshotIndex;
+    }
+
+    public void restoreMeta(int currentTerm, int votedFor) {
+        this.currentTerm = currentTerm;
+        this.votedFor = votedFor;
+    }
+
+    private void persistMeta() {
+        if (persistenceStorage != null) {
+            try {
+                persistenceStorage.saveMeta(this.currentTerm, this.votedFor);
+            } catch (IOException e) {
+                throw new UncheckedIOException("Failed to save Raft metadata (currentTerm, votedFor)", e);
+            }
+        }
+    }
 
     public <T> T withLock(java.util.function.Supplier<T> action) {
         lock.lock();
@@ -38,12 +81,11 @@ public class RaftState {
             this.currentTerm = rpcTerm;
             this.votedFor = -1;
             this.role = NodeRole.FOLLOWER;
-            // Gọi hàm lưu xuống đĩa (Persistence) ở đây nếu có
+            persistMeta();
             return true;
         }
         return false;
     }
-
 
     public int getCurrentTerm() { return currentTerm; }
     public int getVotedFor() { return votedFor; }
@@ -52,16 +94,23 @@ public class RaftState {
     public int getCommitIndex() { return commitIndex; }
     public int getLastApplied() { return lastApplied; }
     public List<LogEntry> getLog() { return List.copyOf(log); }
-    public Map<Integer, Integer> getNextIndex() {
-        return nextIndex;
+    public Map<Integer, Integer> getNextIndex() { return nextIndex; }
+    public Map<Integer, Integer> getMatchIndex() { return matchIndex; }
+
+    public void setCurrentTerm(int currentTerm) {
+        if (this.currentTerm != currentTerm) {
+            this.currentTerm = currentTerm;
+            persistMeta();
+        }
     }
 
-    public Map<Integer, Integer> getMatchIndex() {
-        return matchIndex;
+    public void setVotedFor(int votedFor) {
+        if (this.votedFor != votedFor) {
+            this.votedFor = votedFor;
+            persistMeta();
+        }
     }
 
-    public void setCurrentTerm(int currentTerm) { this.currentTerm = currentTerm; }
-    public void setVotedFor(int votedFor) { this.votedFor = votedFor; }
     public void setRole(NodeRole role) { this.role = role; }
     public void setLeaderId(int leaderId) { this.leaderId = leaderId; }
     public void setCommitIndex(int commitIndex) { this.commitIndex = commitIndex; }
@@ -72,8 +121,12 @@ public class RaftState {
     public void becomeCandidate() { role = NodeRole.CANDIDATE; }
     public void becomeLeader() { role = NodeRole.LEADER; }
     public void becomeFollower(int term, int leaderId) {
-        currentTerm = term;
+        boolean termChanged = (this.currentTerm != term);
+        this.currentTerm = term;
         this.leaderId = leaderId;
-        role = NodeRole.FOLLOWER;
+        this.role = NodeRole.FOLLOWER;
+        if (termChanged) {
+            persistMeta();
+        }
     }
 }

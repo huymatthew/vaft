@@ -19,3 +19,6 @@ electionConfig:
 networkConfig:
   connectTimeoutMs: 2000
   requestTimeoutMs: 3000
+
+snapshotConfig:
+  snapshotThresholdEntries: 50

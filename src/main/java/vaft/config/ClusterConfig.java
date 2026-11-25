@@ -15,6 +15,7 @@ public class ClusterConfig {
     private NodeInfo self;
     private ElectionConfig electionConfig;
     private NetworkConfig networkConfig;
+    private SnapshotConfig snapshotConfig = new SnapshotConfig();
     // 1. Constructor rỗng cho SnakeYAML
     public ClusterConfig() {}
 
@@ -89,5 +90,13 @@ public class ClusterConfig {
 
     public void setNetworkConfig(NetworkConfig networkConfig) {
         this.networkConfig = networkConfig;
+    }
+
+    public SnapshotConfig getSnapshotConfig() {
+        return snapshotConfig;
+    }
+
+    public void setSnapshotConfig(SnapshotConfig snapshotConfig) {
+        this.snapshotConfig = snapshotConfig;
     }
 }
